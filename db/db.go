@@ -3,6 +3,8 @@ package db
 import (
 	"context"
 	"database/sql"
+
+	"lively/core"
 )
 
 type DB interface {
@@ -21,4 +23,15 @@ type Client interface {
 	DB
 
 	ExecTrx(ctx context.Context, fn func(trx Trx) error) error
+}
+
+// Maps SQL errors to core ones
+func MapError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if err == sql.ErrNoRows {
+		return core.ErrEntityNotFound
+	}
+	return err
 }
