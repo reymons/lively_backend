@@ -1,14 +1,16 @@
-package transport
+package rtmp
 
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
 
 	rtmplib "github.com/reymons/rtmp-go"
 
+	"lively/codec/flv"
 	"lively/core"
 	"lively/core/model"
 	"lively/db"
@@ -16,30 +18,75 @@ import (
 )
 
 type rtmpSession struct {
-	userID core.PublisherID
-	ctx    context.Context
+	conn        *rtmplib.Conn
+	userID      core.PublisherID
+	ctx         context.Context
+	naluLenSize uint8
 }
 
-type RTMP struct {
+type Transport struct {
 	ln         rtmplib.Listener
 	sender     core.MediaChannelSender
 	dbClient   db.Client
 	streamKeys store.StreamKeys
 }
 
-func NewRTMP(sender core.MediaChannelSender, dbClient db.Client, streamKeys store.StreamKeys) *RTMP {
-	return &RTMP{
+func NewTransport(sender core.MediaChannelSender, dbClient db.Client, streamKeys store.StreamKeys) *Transport {
+	return &Transport{
 		sender:     sender,
 		dbClient:   dbClient,
 		streamKeys: streamKeys,
 	}
 }
 
-func (t *RTMP) onVideoMessage(mesg *rtmplib.VideoMessage, session *rtmpSession) error {
+func (t *Transport) onVideoMessage(mesg *rtmplib.VideoMessage, session *rtmpSession) error {
+	var tag flv.H264VideoTag
+	n, err := tag.Decode(mesg.Data)
+	if err != nil {
+		return fmt.Errorf("decode flv tag: %w", err)
+	}
+
+	if tag.PacketType == flv.H264PackTypeSeqHdr {
+		hdr := mesg.Data[n:]
+		size, err := flv.GetNALULenSizeFromSeqHdr(hdr)
+		if err != nil {
+			return fmt.Errorf("get nalu len size: %w", err)
+		}
+		session.naluLenSize = size
+
+		err = t.sender.SendVideoSeqHeader(session.userID, hdr)
+		if err != nil {
+			return fmt.Errorf("send video seq header: %w", err)
+		}
+
+		return nil
+	}
+
+	if tag.PacketType == flv.H264PackTypeNALU {
+		var itr flv.H264NALUnitIterator
+		if err := flv.InitH264NALUnitIterator(&itr, session.naluLenSize, mesg.Data[n:]); err != nil {
+			return fmt.Errorf("init video itr: %w", err)
+		}
+
+		var unit flv.H264NALUnit
+		for !itr.Walk(&unit) {
+			isKeyFrame := unit.Type == flv.H264NALUTypeIDR
+			if isKeyFrame || unit.Type == flv.H264NALUTypeNonIDR {
+				err = t.sender.SendVideoData(session.userID, mesg.Timestamp, unit.Data, isKeyFrame)
+				if err != nil {
+					if err == core.ErrNoPublisher {
+						return fmt.Errorf("send video data: %w", err)
+					}
+					log.Printf("WARNING: send nalu unit: %d, %w", session.userID, err)
+				}
+			}
+		}
+	}
+
 	return nil
 }
 
-func (t *RTMP) onConnect(mesg *rtmplib.ConnectMessage, userData any) error {
+func (t *Transport) onConnect(mesg *rtmplib.ConnectMessage, userData any) error {
 	session, ok := userData.(*rtmpSession)
 	if !ok {
 		return fmt.Errorf("userData is not a session")
@@ -59,15 +106,18 @@ func (t *RTMP) onConnect(mesg *rtmplib.ConnectMessage, userData any) error {
 	return nil
 }
 
-func (t *RTMP) onPublish(mesg *rtmplib.PublishStreamMessage, userData any) error {
+func (t *Transport) onPublish(mesg *rtmplib.PublishStreamMessage, userData any) error {
 	return nil
 }
 
-func (t *RTMP) onConn(conn *rtmplib.Conn) {
+func (t *Transport) onConn(conn *rtmplib.Conn) {
 	defer conn.Close()
 	log.Printf("INFO: new RTMP conn: %s", conn.RemoteAddr().String())
 
-	session := &rtmpSession{ctx: context.TODO()}
+	session := &rtmpSession{
+		ctx:  context.TODO(),
+		conn: conn,
+	}
 	stream, err := conn.AcceptStream(&rtmplib.AcceptStreamOptions{
 		UserData:  session,
 		OnConnect: t.onConnect,
@@ -109,11 +159,15 @@ func (t *RTMP) onConn(conn *rtmplib.Conn) {
 
 		if err != nil {
 			log.Printf("ERROR: handle RTMP message: %v", err)
+
+			if errors.Is(err, core.ErrNoPublisher) {
+				return
+			}
 		}
 	}
 }
 
-func (t *RTMP) RunServer(addr string, tlsConf *tls.Config) error {
+func (t *Transport) RunServer(addr string, tlsConf *tls.Config) error {
 	var ln rtmplib.Listener
 	var err error
 	if tlsConf == nil {
@@ -139,6 +193,6 @@ func (t *RTMP) RunServer(addr string, tlsConf *tls.Config) error {
 	return nil
 }
 
-func (t *RTMP) StopServer() {
+func (t *Transport) StopServer() {
 	t.ln.Close()
 }

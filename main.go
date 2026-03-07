@@ -9,10 +9,10 @@ import (
 	"lively/core"
 	"lively/db/pg"
 	"lively/store"
-	"lively/transport"
+	"lively/transport/rtmp"
 )
 
-func runRTMPServer(wg *sync.WaitGroup, rtmp *transport.RTMP, conf *config.Config) {
+func runRTMPServer(wg *sync.WaitGroup, rtmp *rtmp.Transport, conf *config.Config) {
 	defer wg.Done()
 
 	addr := fmt.Sprintf("%s:%s", conf.RTMPServerHost, conf.RTMPServerPort)
@@ -44,7 +44,7 @@ func main() {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	rtmp := transport.NewRTMP(channel, dbClient, streamKeys)
+	rtmp := rtmp.NewTransport(channel, dbClient, streamKeys)
 	go runRTMPServer(&wg, rtmp, conf)
 
 	wg.Wait()
