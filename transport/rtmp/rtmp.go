@@ -17,6 +17,11 @@ import (
 	"lively/store"
 )
 
+var (
+	errInvalidUserData   = errors.New("userData is not a session")
+	errInactiveStreamKey = errors.New("inactive stream key")
+)
+
 type rtmpSession struct {
 	conn        *rtmplib.Conn
 	userID      core.PublisherID
@@ -39,45 +44,60 @@ func NewTransport(sender core.MediaChannelSender, dbClient db.Client, streamKeys
 	}
 }
 
+func (t *Transport) isAllowedNALU(nalu *flv.H264NALUnit) bool {
+	return nalu.Type == flv.H264NALUTypeIDR || nalu.Type == flv.H264NALUTypeNonIDR
+}
+
+func (t *Transport) isKeyFrameNALU(nalu *flv.H264NALUnit) bool {
+	return nalu.Type == flv.H264NALUTypeIDR
+}
+
 func (t *Transport) onVideoMessage(mesg *rtmplib.VideoMessage, session *rtmpSession) error {
 	var tag flv.H264VideoTag
-	n, err := tag.Decode(mesg.Data)
-	if err != nil {
+	if err := tag.Decode(mesg.Data); err != nil {
 		return fmt.Errorf("decode flv tag: %w", err)
 	}
 
 	if tag.PacketType == flv.H264PackTypeSeqHdr {
-		hdr := mesg.Data[n:]
-		size, err := flv.GetNALULenSizeFromSeqHdr(hdr)
-		if err != nil {
-			return fmt.Errorf("get nalu len size: %w", err)
+		var hdr flv.H264VideoSeqHeader
+		if err := hdr.Decode(tag.Data); err != nil {
+			return fmt.Errorf("decode sequence header: %w", err)
 		}
-		session.naluLenSize = size
+		session.naluLenSize = hdr.NALULenSize
 
-		err = t.sender.SendVideoSeqHeader(session.userID, hdr)
-		if err != nil {
+		if err := t.sender.SendVideoSeqHeader(session.userID, tag.Data); err != nil {
 			return fmt.Errorf("send video seq header: %w", err)
 		}
-
 		return nil
 	}
 
 	if tag.PacketType == flv.H264PackTypeNALU {
-		var itr flv.H264NALUnitIterator
-		if err := flv.InitH264NALUnitIterator(&itr, session.naluLenSize, mesg.Data[n:]); err != nil {
+		var itr flv.H264NALUIterator
+		if err := flv.InitH264NALUIterator(&itr, session.naluLenSize, tag.Data); err != nil {
 			return fmt.Errorf("init video itr: %w", err)
 		}
 
 		var unit flv.H264NALUnit
-		for !itr.Walk(&unit) {
-			isKeyFrame := unit.Type == flv.H264NALUTypeIDR
-			if isKeyFrame || unit.Type == flv.H264NALUTypeNonIDR {
-				err = t.sender.SendVideoData(session.userID, mesg.Timestamp, unit.Data, isKeyFrame)
+		for {
+			unitBuf, err := itr.Walk(&unit)
+			if err != nil {
+				return fmt.Errorf("walk over NAL units: %w", err)
+			}
+			if len(unitBuf) < 1 {
+				break
+			}
+
+			if t.isAllowedNALU(&unit) {
+				err := t.sender.SendVideoData(
+					session.userID, mesg.Timestamp,
+					unitBuf, t.isKeyFrameNALU(&unit),
+				)
+
 				if err != nil {
 					if err == core.ErrNoPublisher {
 						return fmt.Errorf("send video data: %w", err)
 					}
-					log.Printf("WARNING: send nalu unit: %d, %w", session.userID, err)
+					log.Printf("WARNING: send nalu unit: %d, %v", session.userID, err)
 				}
 			}
 		}
@@ -89,7 +109,7 @@ func (t *Transport) onVideoMessage(mesg *rtmplib.VideoMessage, session *rtmpSess
 func (t *Transport) onConnect(mesg *rtmplib.ConnectMessage, userData any) error {
 	session, ok := userData.(*rtmpSession)
 	if !ok {
-		return fmt.Errorf("userData is not a session")
+		return errInvalidUserData
 	}
 
 	key := strings.TrimPrefix(mesg.AppName, "live/")
@@ -99,7 +119,7 @@ func (t *Transport) onConnect(mesg *rtmplib.ConnectMessage, userData any) error 
 		return fmt.Errorf("get stream key: %w", err)
 	}
 	if !sk.Active {
-		return fmt.Errorf("inactive stream key")
+		return errInactiveStreamKey
 	}
 	session.userID = core.PublisherID(sk.UserID)
 
