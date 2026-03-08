@@ -4,11 +4,15 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
 )
 
 var (
-	ErrBufferTooShort = errors.New("buffer is too short")
-	ErrInvalidCodec   = errors.New("invalid codec")
+	ErrBufferTooShort        = errors.New("buffer is too short")
+	ErrInvalidCodec          = errors.New("invalid codec")
+	ErrInvalidNALULenSize    = errors.New("invalid NALU length size: must be 2 or 4")
+	ErrNALUTooLarge          = errors.New("NALU is too large")
+	ErrNALULenPrefixTooShort = errors.New("actual NALU length is greater than the length header can hold")
 )
 
 const (
@@ -112,52 +116,101 @@ func (h *H264VideoSeqHeader) Decode(data []byte) error {
 	return nil
 }
 
-type H264NALUnitIterator struct {
+// Decodes length-prefixed NALU
+// Returns length of the NALU
+func DecodeNALU(nalu *H264NALUnit, data []byte, lenSize uint8) (int, error) {
+	var off int
+	var naluLen uint32
+
+	if lenSize == 4 {
+		if len(data) < 4 {
+			return 0, ErrBufferTooShort
+		}
+		naluLen = binary.BigEndian.Uint32(data)
+		off += 4
+	} else if lenSize == 2 {
+		if len(data) < 2 {
+			return 0, ErrBufferTooShort
+		}
+		naluLen = uint32(binary.BigEndian.Uint16(data))
+		off += 2
+	} else {
+		return 0, ErrInvalidNALULenSize
+	}
+
+	if uint64(naluLen) > uint64(math.MaxInt) {
+		return 0, ErrNALUTooLarge
+	}
+	length := int(naluLen)
+	data = data[off:]
+	if len(data) < length {
+		return 0, ErrBufferTooShort
+	}
+	if err := nalu.Decode(data[:length]); err != nil {
+		return 0, fmt.Errorf("nalu.Decode: %w", err)
+	}
+	return length, nil
+}
+
+// Encodes length-prefixed NALU
+func EncodeNALU(nalu *H264NALUnit, data []byte, lenSize uint8) (int, error) {
+	naluLen := uint64(h264NALUHdrSize + len(nalu.Data))
+	var off int
+	if lenSize == 2 {
+		if len(data) < 2 {
+			return 0, ErrBufferTooShort
+		}
+		if naluLen > uint64(math.MaxUint16) {
+			return 0, ErrNALULenPrefixTooShort
+		}
+		binary.BigEndian.PutUint16(data, uint16(naluLen))
+		off += 2
+	} else if lenSize == 4 {
+		if len(data) < 4 {
+			return 0, ErrBufferTooShort
+		}
+		if naluLen > uint64(math.MaxUint32) {
+			return 0, ErrNALULenPrefixTooShort
+		}
+		binary.BigEndian.PutUint32(data, uint32(naluLen))
+		off += 4
+	} else {
+		return 0, ErrInvalidNALULenSize
+	}
+	if n, err := nalu.Encode(data[off:]); err != nil {
+		return 0, fmt.Errorf("nalu.Encode: %w", err)
+	} else {
+		return off + n, nil
+	}
+}
+
+type H264NALUIterator struct {
 	off         int
 	naluLenSize uint8
 	data        []byte
 }
 
-func InitH264NALUnitIterator(itr *H264NALUnitIterator, naluLenSize uint8, data []byte) error {
+func InitH264NALUIterator(itr *H264NALUIterator, naluLenSize uint8, data []byte) error {
 	if naluLenSize != 2 && naluLenSize != 4 {
 		return ErrInvalidNALULenSize
 	}
-
 	itr.naluLenSize = naluLenSize
 	itr.data = data
 	return nil
 }
 
-func (itr *H264NALUnitIterator) Walk(nalu *H264NALUnit) bool {
+// Walks over NAL units
+// Returns an empty slice if there're no more NAL units
+func (itr *H264NALUIterator) Walk(nalu *H264NALUnit) ([]byte, error) {
 	if itr.off >= len(itr.data) {
-		return true
+		return []byte{}, nil
 	}
-
 	data := itr.data[itr.off:]
-	off := 0
-
-	var naluLen int
-	switch itr.naluLenSize {
-	case 2:
-		if len(data) < 2 {
-			return true
-		}
-		naluLen = int(binary.BigEndian.Uint16(data))
-		off += 2
-	case 4:
-		if len(data) < 4 {
-			return true
-		}
-		naluLen = int(binary.BigEndian.Uint32(data))
-		off += 4
-	default:
-		return true
+	naluLen, err := DecodeNALU(nalu, data, itr.naluLenSize)
+	if err != nil {
+		return []byte{}, fmt.Errorf("decode NALU: %w", err)
 	}
-
-	if err := nalu.Decode(data[off : off+naluLen]); err != nil {
-		return true
-	}
-	off += naluLen
-	itr.off += off
-	return false
+	totalLen := int(itr.naluLenSize) + naluLen
+	itr.off += totalLen
+	return data[:totalLen], nil
 }
