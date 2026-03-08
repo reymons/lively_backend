@@ -25,7 +25,7 @@ type H264NALUnit struct {
 
 func (u *H264NALUnit) Decode(data []byte) error {
 	if len(data) < 2 {
-		return ErrBufferNoSpace
+		return ErrBufferTooShort
 	}
 	u.Type = data[0] & 0b00011111
 	u.Data = data
@@ -35,7 +35,7 @@ func (u *H264NALUnit) Decode(data []byte) error {
 func (u *H264NALUnit) Encode(buf []byte) (int, error) {
 	encodedSize := 4 + len(u.Data)
 	if len(buf) < encodedSize {
-		return 0, ErrBufferNoSpace
+		return 0, ErrBufferTooShort
 	}
 	binary.BigEndian.PutUint32(buf, uint32(len(u.Data)))
 	copy(buf[4:], u.Data)

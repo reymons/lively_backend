@@ -1,5 +1,15 @@
 package flv
 
+func encode3BytesBE(buf []byte, n uint32) {
+	if len(buf) < 3 {
+		panic("expected a buffer length at least 3 byte long")
+	}
+
+	buf[0] = byte(n >> 16)
+	buf[1] = byte(n >> 8)
+	buf[2] = byte(n)
+}
+
 func decode3BytesBE(b []byte) uint32 {
 	if len(b) < 3 {
 		panic("size should be at least 3 bytes")
