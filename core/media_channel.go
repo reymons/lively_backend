@@ -132,8 +132,8 @@ func (mc *MediaChannel) SendVideoSeqHeader(id PublisherID, data []byte) error {
 
 // Receiver part
 
-func (mc *MediaChannel) AddConsumer(id PublisherID, consumer Consumer) error {
-	pub := mc.getPublisher(id)
+func (mc *MediaChannel) AddConsumer(consumer Consumer) error {
+	pub := mc.getPublisher(consumer.PublisherID())
 	if pub == nil {
 		return ErrNoPublisher
 	}
@@ -144,10 +144,10 @@ func (mc *MediaChannel) AddConsumer(id PublisherID, consumer Consumer) error {
 	return nil
 }
 
-func (mc *MediaChannel) RemoveConsumer(pubID PublisherID, cnsID ConsumerID) {
-	pub := mc.getPublisher(pubID)
+func (mc *MediaChannel) RemoveConsumer(consumer Consumer) {
+	pub := mc.getPublisher(consumer.PublisherID())
 	if pub != nil {
-		pub.removeConsumer(cnsID)
+		pub.removeConsumer(consumer.ID())
 	}
 }
 

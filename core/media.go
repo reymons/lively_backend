@@ -35,6 +35,8 @@ type ConsumerID string
 type Consumer interface {
 	ID() ConsumerID
 
+	PublisherID() PublisherID
+
 	SendFrame(frame *MediaFrame) error
 
 	SendVideoSeqHeader(data []byte) error
@@ -66,8 +68,8 @@ type MediaChannelReceiver interface {
 	// Adds a consumer to the publisher
 	// If a publisher by the specified ID doesn't exist, returns ErrNoPublisher
 	// If a consumer by the specified ID already exists, returns ErrConsumerExists
-	AddConsumer(id PublisherID, consumer Consumer) error
+	AddConsumer(consumer Consumer) error
 
 	// Removes a consumer from the publisher's consumers
-	RemoveConsumer(pubID PublisherID, cnsID ConsumerID)
+	RemoveConsumer(consumer Consumer)
 }

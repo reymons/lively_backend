@@ -39,31 +39,35 @@ func getFrame(t *testing.T, typ uint8) *MediaFrame {
 }
 
 func newMediaChannelWithConsumer(t *testing.T) (*MediaChannel, *publisher, Consumer) {
-	pubID := getPublisherID()
-	consumer := NewConsumer(getConsumerID())
+	consumer := NewConsumer(getConsumerID(), getPublisherID())
 	channel := NewMediaChannel()
-	if err := channel.AddPublisher(pubID); err != nil {
+	if err := channel.AddPublisher(consumer.PublisherID()); err != nil {
 		t.Fatalf("add publisher: %v", err)
 	}
-	if err := channel.AddConsumer(pubID, consumer); err != nil {
+	if err := channel.AddConsumer(consumer); err != nil {
 		t.Fatalf("add consumer: %v", err)
 	}
-	pub := channel.getPublisher(pubID)
+	pub := channel.getPublisher(consumer.PublisherID())
 	return channel, pub, consumer
 }
 
 type MockConsumer struct {
 	id               ConsumerID
+	pubID            PublisherID
 	onVideoFrame     func(frame *MediaFrame)
 	onVideoSeqHeader func(hdr []byte)
 }
 
-func NewConsumer(id ConsumerID) *MockConsumer {
-	return &MockConsumer{id: id}
+func NewConsumer(id ConsumerID, pubID PublisherID) *MockConsumer {
+	return &MockConsumer{id: id, pubID: pubID}
 }
 
 func (c *MockConsumer) ID() ConsumerID {
 	return c.id
+}
+
+func (c *MockConsumer) PublisherID() PublisherID {
+	return c.pubID
 }
 
 func (c *MockConsumer) OnVideoFrame(fn func(frame *MediaFrame)) {
@@ -161,8 +165,8 @@ func TestMediaChannel_AddConsumer(t *testing.T) {
 func TestMediaChannel_AddExistingConsumer(t *testing.T) {
 	t.Parallel()
 
-	channel, pub, consumer := newMediaChannelWithConsumer(t)
-	if err := channel.AddConsumer(pub.id, consumer); err != ErrConsumerExists {
+	channel, _, consumer := newMediaChannelWithConsumer(t)
+	if err := channel.AddConsumer(consumer); err != ErrConsumerExists {
 		t.Errorf("expected ErrConsumerExists error, got '%v'", err)
 	}
 }
@@ -171,7 +175,7 @@ func TestMediaChannel_RemoveConsumer(t *testing.T) {
 	t.Parallel()
 
 	channel, pub, consumer := newMediaChannelWithConsumer(t)
-	channel.RemoveConsumer(pub.id, consumer.ID())
+	channel.RemoveConsumer(consumer)
 	if cns := pub.getConsumer(consumer.ID()); cns != nil {
 		t.Errorf("consumer with ID %s was not removed", consumer.ID())
 	}
@@ -180,10 +184,10 @@ func TestMediaChannel_RemoveConsumer(t *testing.T) {
 func TestMediaChannel_RemoveNonexistentConsumer(t *testing.T) {
 	t.Parallel()
 
-	channel, pub, consumer := newMediaChannelWithConsumer(t)
-	channel.RemoveConsumer(pub.id, consumer.ID())
-	channel.RemoveConsumer(pub.id, consumer.ID())
-	channel.RemoveConsumer(pub.id, consumer.ID())
+	channel, _, consumer := newMediaChannelWithConsumer(t)
+	channel.RemoveConsumer(consumer)
+	channel.RemoveConsumer(consumer)
+	channel.RemoveConsumer(consumer)
 }
 
 func TestMediaChannel_SendVideoData(t *testing.T) {
