@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"strconv"
 	"testing"
 
 	rtmplib "github.com/reymons/rtmp-go"
@@ -17,6 +18,11 @@ import (
 	"lively/testing/mocks/db"
 	"lively/testing/mocks/store"
 )
+
+func getPublisherID() (core.PublisherID, uint64) {
+	userID := rand.Uint64()
+	return core.PublisherID(strconv.FormatUint(userID, 10)), userID
+}
 
 func newTransport(skConf *mocks_store.NewStreamKeysConfig, senderConf *mocks_media.NewChannelSenderConfig) *Transport {
 	client := mocks_db.NewClient()
@@ -123,7 +129,7 @@ func TestRTMP_OnConnect_TypeAssertsUserData(t *testing.T) {
 func TestRTMP_OnConnect_SetsCorrectDataToSession(t *testing.T) {
 	t.Parallel()
 
-	userID := rand.Uint64()
+	pubID, userID := getPublisherID()
 	transport := newTransport(&mocks_store.NewStreamKeysConfig{
 		GetByKey: func(key string, sk *model.StreamKey) error {
 			sk.UserID = userID
@@ -135,8 +141,8 @@ func TestRTMP_OnConnect_SetsCorrectDataToSession(t *testing.T) {
 	if err := transport.onConnect(newConnectMesg(), session); err != nil {
 		t.Fatalf("onConnect: %v", err)
 	}
-	if session.userID != core.PublisherID(userID) {
-		t.Errorf("invalid session userID: expected %d, got %d", userID, session.userID)
+	if session.pubID != pubID {
+		t.Errorf("invalid session publisher ID: expected %s, got %s", pubID, session.pubID)
 	}
 }
 
@@ -221,8 +227,8 @@ func TestRTMP_OnVideoMesg_SendsCorrectSeqHeader(t *testing.T) {
 	transport := newTransport(nil, &mocks_media.NewChannelSenderConfig{
 		SendVideoSeqHeader: func(id core.PublisherID, hdr []byte) error {
 			callCount += 1
-			if id != session.userID {
-				t.Errorf("invalid publisher id: expected %d, got %d", session.userID, id)
+			if id != session.pubID {
+				t.Errorf("invalid publisher id: expected %s, got %s", session.pubID, id)
 			}
 			if !bytes.Equal(hdr, tag.Data) {
 				t.Errorf("invalid sequence header: expected %x, got %x", tag.Data, hdr)

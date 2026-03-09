@@ -47,7 +47,7 @@ func (pub *publisher) sendFrame(fr *MediaFrame) {
 
 	for id, consumer := range pub.consumers {
 		if err := consumer.SendFrame(fr); err != nil {
-			log.Printf("ERROR: send frame to consumer (id %d): %v", id, err)
+			log.Printf("ERROR: send frame to consumer (id %s): %v", id, err)
 		}
 	}
 }
@@ -123,7 +123,7 @@ func (mc *MediaChannel) SendVideoSeqHeader(id PublisherID, data []byte) error {
 
 	for id, consumer := range pub.consumers {
 		if err := consumer.SendVideoSeqHeader(data); err != nil {
-			log.Printf("ERROR: send video seq hdr to consumer (id %d): %v", id, err)
+			log.Printf("ERROR: send video seq hdr to consumer (id %s): %v", id, err)
 		}
 	}
 

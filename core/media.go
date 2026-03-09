@@ -28,9 +28,9 @@ func (fr *MediaFrame) CopyTo(frame *MediaFrame) {
 	copy(frame.Data, fr.Data)
 }
 
-type PublisherID uint64
+type PublisherID string
 
-type ConsumerID uint64
+type ConsumerID string
 
 type Consumer interface {
 	ID() ConsumerID

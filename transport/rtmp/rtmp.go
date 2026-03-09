@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 
 	rtmplib "github.com/reymons/rtmp-go"
@@ -24,7 +25,7 @@ var (
 
 type rtmpSession struct {
 	conn        *rtmplib.Conn
-	userID      core.PublisherID
+	pubID       core.PublisherID
 	ctx         context.Context
 	naluLenSize uint8
 }
@@ -65,7 +66,7 @@ func (t *Transport) onVideoMessage(mesg *rtmplib.VideoMessage, session *rtmpSess
 		}
 		session.naluLenSize = hdr.NALULenSize
 
-		if err := t.sender.SendVideoSeqHeader(session.userID, tag.Data); err != nil {
+		if err := t.sender.SendVideoSeqHeader(session.pubID, tag.Data); err != nil {
 			return fmt.Errorf("send video seq header: %w", err)
 		}
 		return nil
@@ -89,7 +90,7 @@ func (t *Transport) onVideoMessage(mesg *rtmplib.VideoMessage, session *rtmpSess
 
 			if t.isAllowedNALU(&unit) {
 				err := t.sender.SendVideoData(
-					session.userID, mesg.Timestamp,
+					session.pubID, mesg.Timestamp,
 					unitBuf, t.isKeyFrameNALU(&unit),
 				)
 
@@ -97,7 +98,7 @@ func (t *Transport) onVideoMessage(mesg *rtmplib.VideoMessage, session *rtmpSess
 					if err == core.ErrNoPublisher {
 						return fmt.Errorf("send video data: %w", err)
 					}
-					log.Printf("WARNING: send nalu unit: %d, %v", session.userID, err)
+					log.Printf("WARNING: send nalu unit: %s, %v", session.pubID, err)
 				}
 			}
 		}
@@ -121,7 +122,7 @@ func (t *Transport) onConnect(mesg *rtmplib.ConnectMessage, userData any) error 
 	if !sk.Active {
 		return errInactiveStreamKey
 	}
-	session.userID = core.PublisherID(sk.UserID)
+	session.pubID = core.PublisherID(strconv.FormatUint(sk.UserID, 10))
 
 	return nil
 }
@@ -148,12 +149,12 @@ func (t *Transport) onConn(conn *rtmplib.Conn) {
 		return
 	}
 
-	if err := t.sender.AddPublisher(session.userID); err != nil {
+	if err := t.sender.AddPublisher(session.pubID); err != nil {
 		log.Printf("ERROR: add publisher: %v", err)
 		return
 	}
-	defer t.sender.RemovePublisher(session.userID)
-	log.Printf("INFO: added a publisher with ID: %d", session.userID)
+	defer t.sender.RemovePublisher(session.pubID)
+	log.Printf("INFO: added a publisher with ID: %s", session.pubID)
 
 	for {
 		mesg, err := conn.ReadStreamMessage(stream)
@@ -173,7 +174,7 @@ func (t *Transport) onConn(conn *rtmplib.Conn) {
 		case *rtmplib.VideoMessage:
 			err = t.onVideoMessage(m, session)
 		case *rtmplib.CloseStreamMessage:
-			log.Printf("INFO: stream %d with publisher ID %d closed", stream, session.userID)
+			log.Printf("INFO: stream %d with publisher ID %s closed", stream, session.pubID)
 			return
 		}
 

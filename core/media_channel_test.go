@@ -1,10 +1,12 @@
 package core
 
 import (
-	"bytes"
 	crypto_rand "crypto/rand"
+
+	"bytes"
 	"math/rand/v2"
 	"reflect"
+	"strconv"
 	"testing"
 )
 
@@ -17,11 +19,11 @@ func getSeqHeader(t *testing.T) []byte {
 }
 
 func getPublisherID() PublisherID {
-	return PublisherID(rand.Uint64())
+	return PublisherID(strconv.FormatUint(rand.Uint64(), 10))
 }
 
 func getConsumerID() ConsumerID {
-	return ConsumerID(rand.Uint64())
+	return ConsumerID(strconv.FormatUint(rand.Uint64(), 10))
 }
 
 func getFrame(t *testing.T, typ uint8) *MediaFrame {
@@ -102,9 +104,9 @@ func TestMediaChannel_AddPublisher(t *testing.T) {
 	}
 
 	if pub := channel.getPublisher(pubID); pub == nil {
-		t.Errorf("expected a publisher with ID %d", pubID)
+		t.Errorf("expected a publisher with ID %s", pubID)
 	} else if pub.id != pubID {
-		t.Errorf("publisher IDs differ: expected %d, got %d", pubID, pub.id)
+		t.Errorf("publisher IDs differ: expected %s, got %s", pubID, pub.id)
 	}
 }
 
@@ -134,7 +136,7 @@ func TestMediaChannel_RemovePublisher(t *testing.T) {
 
 	channel.RemovePublisher(pubID)
 	if pub := channel.getPublisher(pubID); pub != nil {
-		t.Errorf("publisher with ID %d was not removed", pubID)
+		t.Errorf("publisher with ID %s was not removed", pubID)
 	}
 }
 
@@ -152,7 +154,7 @@ func TestMediaChannel_AddConsumer(t *testing.T) {
 
 	_, pub, consumer := newMediaChannelWithConsumer(t)
 	if cns := pub.getConsumer(consumer.ID()); cns != consumer {
-		t.Errorf("invalid consumer was added: expected with ID %d, got %d", consumer.ID(), cns.ID())
+		t.Errorf("invalid consumer was added: expected with ID %s, got %s", consumer.ID(), cns.ID())
 	}
 }
 
@@ -171,7 +173,7 @@ func TestMediaChannel_RemoveConsumer(t *testing.T) {
 	channel, pub, consumer := newMediaChannelWithConsumer(t)
 	channel.RemoveConsumer(pub.id, consumer.ID())
 	if cns := pub.getConsumer(consumer.ID()); cns != nil {
-		t.Errorf("consumer with ID %d was not removed", consumer.ID())
+		t.Errorf("consumer with ID %s was not removed", consumer.ID())
 	}
 }
 
