@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"strings"
 
 	"github.com/google/uuid"
@@ -54,7 +55,7 @@ func (t *Transport) sendInitialVideoData(consumer *wsConsumer) error {
 	return nil
 }
 
-func (t *Transport) OnConn(conn *ws.Conn) {
+func (t *Transport) onConn(conn *ws.Conn) {
 	defer conn.Close()
 
 	pubID, err := t.getPublisherID(conn.Request().URL.Path)
@@ -92,4 +93,9 @@ func (t *Transport) OnConn(conn *ws.Conn) {
 			return
 		}
 	}
+}
+
+func (t *Transport) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	handler := ws.Handler(t.onConn)
+	handler.ServeHTTP(w, req)
 }

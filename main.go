@@ -9,17 +9,30 @@ import (
 	"lively/core"
 	"lively/db/pg"
 	"lively/store"
+	"lively/transport/http"
 	"lively/transport/rtmp"
+	"lively/transport/ws_media"
 )
 
-func runRTMPServer(wg *sync.WaitGroup, rtmp *rtmp.Transport, conf *config.Config) {
+func runRTMPServer(wg *sync.WaitGroup, transport *rtmp.Transport, conf *config.Config) {
 	defer wg.Done()
 
 	addr := fmt.Sprintf("%s:%s", conf.RTMPServerHost, conf.RTMPServerPort)
 	log.Printf("INFO: running RTMP server on %s", addr)
 
-	if err := rtmp.RunServer(addr, nil); err != nil {
-		log.Fatalf("ERROR: run RTMP server: %v", err)
+	if err := transport.RunServer(addr, nil); err != nil {
+		log.Printf("ERROR: run RTMP server: %v", err)
+	}
+}
+
+func runHTTPServer(wg *sync.WaitGroup, transport *http.Transport, conf *config.Config) {
+	defer wg.Done()
+
+	addr := fmt.Sprintf("%s:%s", conf.HTTPServerHost, conf.HTTPServerPort)
+	log.Printf("INFO: running HTTP server on %s", addr)
+
+	if err := transport.RunServer(addr); err != nil {
+		log.Printf("ERROR: run HTTP server: %v", err)
 	}
 }
 
@@ -44,8 +57,13 @@ func main() {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	rtmp := rtmp.NewTransport(channel, dbClient, streamKeys)
-	go runRTMPServer(&wg, rtmp, conf)
+	rtmpTransport := rtmp.NewTransport(channel, dbClient, streamKeys)
+
+	handlers := []http.HandlerInfo{{"/ws/streams/", ws_media.NewTransport(channel)}}
+	httpTransport := http.NewTransport(handlers)
+
+	go runRTMPServer(&wg, rtmpTransport, conf)
+	go runHTTPServer(&wg, httpTransport, conf)
 
 	wg.Wait()
 }
