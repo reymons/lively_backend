@@ -31,7 +31,7 @@ func runHTTPServer(wg *sync.WaitGroup, transport *http.Transport, conf *config.C
 	addr := fmt.Sprintf("%s:%s", conf.HTTPServerHost, conf.HTTPServerPort)
 	log.Printf("INFO: running HTTP server on %s", addr)
 
-	if err := transport.RunServer(addr); err != nil {
+	if err := transport.RunServer(addr, conf.HTTPAllowedOrigins); err != nil {
 		log.Printf("ERROR: run HTTP server: %v", err)
 	}
 }

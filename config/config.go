@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 )
 
 func fatal(prfx string, envVar string, val any) {
@@ -21,11 +22,12 @@ func isValidPort(port string) bool {
 }
 
 type Config struct {
-	DatabaseURL    string
-	HTTPServerHost string
-	HTTPServerPort string
-	RTMPServerHost string
-	RTMPServerPort string
+	DatabaseURL        string
+	HTTPServerHost     string
+	HTTPServerPort     string
+	HTTPAllowedOrigins []string
+	RTMPServerHost     string
+	RTMPServerPort     string
 }
 
 func NewConfig() *Config {
@@ -83,6 +85,8 @@ func NewConfig() *Config {
 		"postgres://%s:%s@%s:%s/%s?sslmode=%s",
 		dbUser, dbPswd, dbHost, dbPort, dbName, dbSSLMode,
 	)
+
+	conf.HTTPAllowedOrigins = strings.Split(os.Getenv("HTTP_ALLOWED_ORIGINS"), ",")
 
 	return conf
 }
