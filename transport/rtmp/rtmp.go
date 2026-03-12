@@ -14,13 +14,11 @@ import (
 	"lively/codec/flv"
 	"lively/core"
 	"lively/core/model"
-	"lively/db"
-	"lively/store"
+	"lively/core/service"
 )
 
 var (
-	errInvalidUserData   = errors.New("userData is not a session")
-	errInactiveStreamKey = errors.New("inactive stream key")
+	errInvalidUserData = errors.New("userData is not a session")
 )
 
 type rtmpSession struct {
@@ -31,17 +29,15 @@ type rtmpSession struct {
 }
 
 type Transport struct {
-	ln         rtmplib.Listener
-	sender     core.MediaChannelSender
-	dbClient   db.Client
-	streamKeys store.StreamKeys
+	ln        rtmplib.Listener
+	sender    core.MediaChannelSender
+	skService service.StreamKey
 }
 
-func NewTransport(sender core.MediaChannelSender, dbClient db.Client, streamKeys store.StreamKeys) *Transport {
+func NewTransport(sender core.MediaChannelSender, skService service.StreamKey) *Transport {
 	return &Transport{
-		sender:     sender,
-		dbClient:   dbClient,
-		streamKeys: streamKeys,
+		sender:    sender,
+		skService: skService,
 	}
 }
 
@@ -116,11 +112,8 @@ func (t *Transport) onConnect(mesg *rtmplib.ConnectMessage, userData any) error 
 	key := strings.TrimPrefix(mesg.AppName, "live/")
 	var sk model.StreamKey
 	// TODO: use hashed stream key
-	if err := t.streamKeys.GetByKey(session.ctx, t.dbClient, key, &sk); err != nil {
+	if err := t.skService.GetByKey(session.ctx, key, &sk); err != nil {
 		return fmt.Errorf("get stream key: %w", err)
-	}
-	if !sk.Active {
-		return errInactiveStreamKey
 	}
 	session.pubID = core.PublisherID(strconv.FormatUint(sk.UserID, 10))
 

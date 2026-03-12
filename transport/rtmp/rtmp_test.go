@@ -15,8 +15,7 @@ import (
 	"lively/core"
 	"lively/core/model"
 	"lively/testing/mocks/core/media"
-	"lively/testing/mocks/db"
-	"lively/testing/mocks/store"
+	"lively/testing/mocks/service"
 )
 
 func getPublisherID() (core.PublisherID, uint64) {
@@ -24,11 +23,10 @@ func getPublisherID() (core.PublisherID, uint64) {
 	return core.PublisherID(strconv.FormatUint(userID, 10)), userID
 }
 
-func newTransport(skConf *mocks_store.NewStreamKeysConfig, senderConf *mocks_media.NewChannelSenderConfig) *Transport {
-	client := mocks_db.NewClient()
-	streamKeys := mocks_store.NewStreamKeys(skConf)
+func newTransport(skConf *mocks_service.NewStreamKeyConfig, senderConf *mocks_media.NewChannelSenderConfig) *Transport {
+	skService := mocks_service.NewStreamKey(skConf)
 	sender := mocks_media.NewChannelSender(senderConf)
-	return NewTransport(sender, client, streamKeys)
+	return NewTransport(sender, skService)
 }
 
 func newSession() *rtmpSession {
@@ -130,7 +128,7 @@ func TestRTMP_OnConnect_SetsCorrectDataToSession(t *testing.T) {
 	t.Parallel()
 
 	pubID, userID := getPublisherID()
-	transport := newTransport(&mocks_store.NewStreamKeysConfig{
+	transport := newTransport(&mocks_service.NewStreamKeyConfig{
 		GetByKey: func(key string, sk *model.StreamKey) error {
 			sk.UserID = userID
 			sk.Active = true
@@ -149,14 +147,15 @@ func TestRTMP_OnConnect_SetsCorrectDataToSession(t *testing.T) {
 func TestRTMP_OnConnect_ChecksIfKeyActive(t *testing.T) {
 	t.Parallel()
 
-	transport := newTransport(&mocks_store.NewStreamKeysConfig{
+	transport := newTransport(&mocks_service.NewStreamKeyConfig{
 		GetByKey: func(key string, sk *model.StreamKey) error {
-			sk.Active = false
-			return nil
+			return core.ErrInactiveStreamKey
 		},
 	}, nil)
-	if err := transport.onConnect(newConnectMesg(), newSession()); err != errInactiveStreamKey {
-		t.Fatalf("invalid error: expected %v, got %v", errInactiveStreamKey, err)
+
+	expected := core.ErrInactiveStreamKey
+	if err := transport.onConnect(newConnectMesg(), newSession()); !errors.Is(err, expected) {
+		t.Fatalf("invalid error: expected %v, got %v", expected, err)
 	}
 }
 
@@ -184,7 +183,7 @@ func TestRTMP_OnConnect_PassesCorrectKeyToStore(t *testing.T) {
 			connMesg.AppName = tt.appName
 
 			var passedKey string
-			transport := newTransport(&mocks_store.NewStreamKeysConfig{
+			transport := newTransport(&mocks_service.NewStreamKeyConfig{
 				GetByKey: func(key string, sk *model.StreamKey) error {
 					sk.Active = true
 					passedKey = key
