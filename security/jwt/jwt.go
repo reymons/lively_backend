@@ -1,6 +1,6 @@
 package jwt
 
-type JWTService interface {
+type Service interface {
 	AccessToken() Token
 
 	RefreshToken() Token
@@ -11,7 +11,7 @@ type jwtService struct {
 	refreshToken Token
 }
 
-func NewService(accessToken, refreshToken Token) JWTService {
+func NewService(accessToken, refreshToken Token) Service {
 	return &jwtService{accessToken, refreshToken}
 }
 
