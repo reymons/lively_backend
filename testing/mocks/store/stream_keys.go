@@ -9,8 +9,9 @@ import (
 )
 
 type NewStreamKeysConfig struct {
-	GetByKey func(key string, sk *model.StreamKey) error
-	Save     func(sk *model.StreamKey) error
+	GetByKey    func(key string, sk *model.StreamKey) error
+	GetByUserID func(userID uint64, sk *model.StreamKey) error
+	Save        func(sk *model.StreamKey) error
 }
 
 type skStore struct {
@@ -22,6 +23,13 @@ func NewStreamKeys(conf *NewStreamKeysConfig) store.StreamKeys {
 		conf = &NewStreamKeysConfig{}
 	}
 	return &skStore{conf: *conf}
+}
+
+func (s *skStore) GetByUserID(ctx context.Context, dbClient db.DB, userID uint64, sk *model.StreamKey) error {
+	if s.conf.GetByUserID != nil {
+		return s.conf.GetByUserID(userID, sk)
+	}
+	return errUnimplemented
 }
 
 func (s *skStore) GetByKey(ctx context.Context, dbClient db.DB, key string, sk *model.StreamKey) error {

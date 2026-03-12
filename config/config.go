@@ -22,12 +22,13 @@ func isValidPort(port string) bool {
 }
 
 type Config struct {
-	DatabaseURL        string
-	HTTPServerHost     string
-	HTTPServerPort     string
-	HTTPAllowedOrigins []string
-	RTMPServerHost     string
-	RTMPServerPort     string
+	DatabaseURL          string
+	HTTPServerHost       string
+	HTTPServerPort       string
+	HTTPAllowedOrigins   []string
+	RTMPServerHost       string
+	RTMPServerPort       string
+	JWTAccessTokenSecret string
 }
 
 func NewConfig() *Config {
@@ -87,6 +88,12 @@ func NewConfig() *Config {
 	)
 
 	conf.HTTPAllowedOrigins = strings.Split(os.Getenv("HTTP_ALLOWED_ORIGINS"), ",")
+
+	secret := os.Getenv("JWT_ACCESS_TOKEN_SECRET")
+	if secret == "" {
+		fatal("JWT access token secret", "JWT_ACCESS_TOKEN_SECRET", secret)
+	}
+	conf.JWTAccessTokenSecret = secret
 
 	return conf
 }
