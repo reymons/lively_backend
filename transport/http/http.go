@@ -53,6 +53,7 @@ func (t *Transport) RunServer(addr string, allowedOrigins []string) error {
 	mux.HandleFunc("POST /api/v1/auth/sign-up", authHandler.SignUp)
 	mux.HandleFunc("POST /api/v1/auth/sign-in", authHandler.SignIn)
 	mux.HandleFunc("GET /api/v1/users/current", authMiddleware.Wrap(usersHandler.GetCurrent))
+	mux.HandleFunc("GET /api/v1/users/usernames/", usersHandler.GetByUsername)
 	mux.HandleFunc("GET /api/v1/stream-keys/current", authMiddleware.Wrap(skHandler.GetOfCurrentUser))
 
 	for _, h := range t.handlers {

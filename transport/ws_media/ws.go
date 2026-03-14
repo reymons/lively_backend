@@ -2,7 +2,6 @@ package ws_media
 
 import (
 	"errors"
-	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -35,26 +34,6 @@ func (t *Transport) getPublisherID(url string) (core.PublisherID, error) {
 	return core.PublisherID(strs[3]), nil
 }
 
-func (t *Transport) sendInitialVideoData(consumer *wsConsumer) error {
-	hdr, err := t.receiver.GetVideoSeqHeader(consumer.pubID)
-	if err != nil {
-		return fmt.Errorf("get video seq header: %w", err)
-	}
-	if err := consumer.SendVideoSeqHeader(hdr); err != nil {
-		return fmt.Errorf("send video seq header: %w", err)
-	}
-
-	var frame core.MediaFrame
-	if err := t.receiver.GetLatestVideoKeyFrame(consumer.pubID, &frame); err != nil {
-		return fmt.Errorf("get latest video key frame: %w", err)
-	}
-	if err := consumer.SendFrame(&frame); err != nil {
-		return fmt.Errorf("send latest video key frame: %w", err)
-	}
-
-	return nil
-}
-
 func (t *Transport) onConn(conn *ws.Conn) {
 	defer conn.Close()
 
@@ -72,24 +51,20 @@ func (t *Transport) onConn(conn *ws.Conn) {
 	cnsID := core.ConsumerID(id.String())
 	consumer := newWSConsumer(cnsID, pubID, conn)
 
-	if err := t.sendInitialVideoData(consumer); err != nil {
-		log.Printf("ERROR: send initial video data: %v", err)
-		return
-	}
+	go consumer.readData()
 
 	if err := t.receiver.AddConsumer(consumer); err != nil {
 		log.Printf("ERROR: register consumer: %v", err)
 		return
 	}
 	defer t.receiver.RemoveConsumer(consumer)
-
-	go consumer.readPublisherData()
+	log.Printf("INFO: added a consumer with id %s and pub id %s", consumer.ID(), consumer.PublisherID())
 
 	for {
 		// Dummy reader for now since a user is not supposed to send any data
 		var buf []byte
 		if err := ws.Message.Receive(consumer.conn, &buf); err != nil {
-			log.Printf("INFO: connection closed: %s", conn.Request().RemoteAddr)
+			log.Printf("INFO: WS connection closed: %s", conn.Request().RemoteAddr)
 			return
 		}
 	}

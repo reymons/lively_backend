@@ -1,3 +1,4 @@
+// TODO: rewrite this shit according to new API
 package rtmp
 
 import (

@@ -15,7 +15,7 @@ type signUpReq struct {
 	Password string `json:"password"`
 }
 
-var usernameRx = regexp.MustCompile(`^[a-zA-Z_-]+$`)
+var usernameRx = regexp.MustCompile(`^[0-9a-zA-Z_-]+$`)
 
 func (req *signUpReq) Valid() codec.Errors {
 	errors := codec.Errors{}
@@ -24,7 +24,7 @@ func (req *signUpReq) Valid() codec.Errors {
 	} else if len(req.Username) < 4 || len(req.Username) > 40 {
 		errors["username"] = "must be between 6 and 40 characters"
 	} else if !usernameRx.MatchString(req.Username) {
-		errors["username"] = "must contain only valid characters: a-z, A-Z, _, -"
+		errors["username"] = "must contain only valid characters: a-z, A-Z, _, -, 0-9"
 	}
 	if req.Password == "" {
 		errors["password"] = codec.ERequiredField

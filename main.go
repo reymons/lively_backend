@@ -4,11 +4,16 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"time"
 
 	"lively/config"
 	"lively/core"
+	"lively/core/service"
 	"lively/db/pg"
+	"lively/security/jwt"
+	"lively/security/password"
 	"lively/store"
+
 	"lively/transport/http"
 	"lively/transport/rtmp"
 	"lively/transport/ws_media"
@@ -52,15 +57,38 @@ func main() {
 
 	// Misc
 	channel := core.NewMediaChannel()
+	pswdManager := password.NewManager()
+	jwtService := jwt.NewService(
+		jwt.NewToken(conf.JWTAccessTokenSecret, time.Hour*24*30),
+		jwt.NewToken("", 0),
+	)
+
+	// Core services
+	authService := service.NewAuth(dbClient, users, streamKeys, pswdManager)
+	skService := service.NewStreamKey(dbClient, streamKeys)
 
 	// Transports
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	rtmpTransport := rtmp.NewTransport(channel, dbClient, streamKeys)
+	rtmpTransport := rtmp.NewTransport(channel, skService)
 
-	handlers := []http.HandlerInfo{{"/ws/streams/", ws_media.NewTransport(channel)}}
-	httpTransport := http.NewTransport(handlers)
+	httpTransport := http.NewTransport(
+		[]http.HandlerInfo{
+			{"/ws/streams/", ws_media.NewTransport(channel)},
+		},
+
+		&http.Dependencies{
+			// Stores
+			Users: users,
+			// Core services
+			AuthService:      authService,
+			StreamKeyService: skService,
+			// Misc
+			JWTService: jwtService,
+			DBClient:   dbClient,
+		},
+	)
 
 	go runRTMPServer(&wg, rtmpTransport, conf)
 	go runHTTPServer(&wg, httpTransport, conf)

@@ -1,69 +1,127 @@
 package core
 
 import (
+	"fmt"
 	"log"
 	"sync"
 )
 
-type publisher struct {
-	id            PublisherID
-	consumers     map[ConsumerID]Consumer
-	mu            sync.RWMutex
-	videoKeyFrame MediaFrame
-	videoSeqHdr   []byte
+type consumerData struct {
+	consumer          Consumer
+	sentVideoKeyFrame bool
 }
 
-func (pub *publisher) getConsumer(id ConsumerID) Consumer {
+type publisher struct {
+	id          PublisherID
+	consumers   map[ConsumerID]consumerData
+	mu          sync.RWMutex
+	videoSeqHdr []byte
+}
+
+func NewPublisher(id PublisherID) Publisher {
+	return &publisher{id: id}
+}
+
+func (pub *publisher) ID() PublisherID {
+	return pub.id
+}
+
+func (pub *publisher) hasConsumer(id ConsumerID) bool {
 	pub.mu.RLock()
 	defer pub.mu.RUnlock()
-	if pub.consumers == nil {
-		return nil
-	}
-	return pub.consumers[id]
+	_, ok := pub.consumers[id]
+	return ok
 }
 
-func (pub *publisher) addConsumer(consumer Consumer) {
+func (pub *publisher) sendVideoSeqHdr(consumer Consumer) error {
+	pub.mu.RLock()
+	hdr := pub.videoSeqHdr
+	pub.mu.RUnlock()
+
+	frame := MediaFrame{Type: MediaFrameVideoSeqHdr, Data: hdr}
+	if err := consumer.SendFrame(&frame); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (pub *publisher) AddConsumer(consumer Consumer) error {
+	if pub.hasConsumer(consumer.ID()) {
+		return ErrConsumerExists
+	}
+	if err := pub.sendVideoSeqHdr(consumer); err != nil {
+		return fmt.Errorf("send video sequence header: %w", err)
+	}
+
 	pub.mu.Lock()
 	defer pub.mu.Unlock()
 	if pub.consumers == nil {
-		pub.consumers = make(map[ConsumerID]Consumer, 1)
+		pub.consumers = make(map[ConsumerID]consumerData, 1)
 	}
-	pub.consumers[consumer.ID()] = consumer
+	pub.consumers[consumer.ID()] = consumerData{consumer: consumer}
+	return nil
 }
 
-func (pub *publisher) removeConsumer(id ConsumerID) {
+func (pub *publisher) RemoveConsumer(consumer Consumer) {
 	pub.mu.Lock()
-	defer pub.mu.Unlock()
-	delete(pub.consumers, id)
+	delete(pub.consumers, consumer.ID())
 	if len(pub.consumers) == 0 {
 		pub.consumers = nil
 	}
+	pub.mu.Unlock()
 }
 
-func (pub *publisher) sendFrame(fr *MediaFrame) {
-	// TODO: should I lock bofore the entire loop?
+func (pub *publisher) Stop() {
 	pub.mu.RLock()
 	defer pub.mu.RUnlock()
 
-	for id, consumer := range pub.consumers {
-		if err := consumer.SendFrame(fr); err != nil {
-			log.Printf("ERROR: send frame to consumer (id %s): %v", id, err)
-		}
+	for _, data := range pub.consumers {
+		data.consumer.Stop()
 	}
 }
 
+func (pub *publisher) SendFrame(frame *MediaFrame) error {
+	if frame.Type == MediaFrameVideoSeqHdr {
+		// TODO: make sure header is not too huge in size
+		pub.mu.Lock()
+		pub.videoSeqHdr = make([]byte, len(frame.Data))
+		copy(pub.videoSeqHdr, frame.Data)
+		pub.mu.Unlock()
+	}
+
+	pub.mu.RLock()
+	defer pub.mu.RUnlock()
+
+	for id, data := range pub.consumers {
+		if frame.Type == MediaFrameVideo && !frame.IsKey && !data.sentVideoKeyFrame {
+			continue
+		}
+
+		if err := data.consumer.SendFrame(frame); err != nil {
+			log.Printf("ERROR: send frame to consumer (id %s): %v", id, err)
+		} else {
+			if frame.Type == MediaFrameVideo && frame.IsKey && !data.sentVideoKeyFrame {
+				data.sentVideoKeyFrame = true
+				pub.consumers[id] = data
+			}
+		}
+	}
+
+	return nil
+}
+
 type MediaChannel struct {
-	publishers map[PublisherID]*publisher
+	publishers map[PublisherID]Publisher
 	mu         sync.RWMutex
 }
 
 func NewMediaChannel() *MediaChannel {
 	return &MediaChannel{
-		publishers: make(map[PublisherID]*publisher),
+		publishers: make(map[PublisherID]Publisher),
 	}
 }
 
-func (mc *MediaChannel) getPublisher(id PublisherID) *publisher {
+func (mc *MediaChannel) getPublisher(id PublisherID) Publisher {
 	mc.mu.RLock()
 	defer mc.mu.RUnlock()
 	return mc.publishers[id]
@@ -71,63 +129,21 @@ func (mc *MediaChannel) getPublisher(id PublisherID) *publisher {
 
 // Sender part
 
-func (mc *MediaChannel) AddPublisher(id PublisherID) error {
-	if pub := mc.getPublisher(id); pub != nil {
+func (mc *MediaChannel) AddPublisher(pub Publisher) error {
+	if pub := mc.getPublisher(pub.ID()); pub != nil {
 		return ErrPublisherExists
 	}
 	mc.mu.Lock()
-	mc.publishers[id] = &publisher{id: id}
+	mc.publishers[pub.ID()] = pub
 	mc.mu.Unlock()
 	return nil
 }
 
-func (mc *MediaChannel) RemovePublisher(id PublisherID) {
+func (mc *MediaChannel) RemovePublisher(pub Publisher) {
+	pub.Stop()
 	mc.mu.Lock()
-	delete(mc.publishers, id)
+	delete(mc.publishers, pub.ID())
 	mc.mu.Unlock()
-}
-
-func (mc *MediaChannel) SendVideoData(id PublisherID, timestamp uint32, data []byte, isKeyFrame bool) error {
-	pub := mc.getPublisher(id)
-	if pub == nil {
-		return ErrNoPublisher
-	}
-	frame := MediaFrame{
-		Type:      MediaFrameVideo,
-		Timestamp: timestamp,
-		Data:      data,
-	}
-	if isKeyFrame {
-		pub.mu.Lock()
-		frame.CopyTo(&pub.videoKeyFrame)
-		pub.mu.Unlock()
-	}
-	pub.sendFrame(&frame)
-	return nil
-}
-
-func (mc *MediaChannel) SendVideoSeqHeader(id PublisherID, data []byte) error {
-	pub := mc.getPublisher(id)
-	if pub == nil {
-		return ErrNoPublisher
-	}
-
-	pub.mu.Lock()
-	pub.videoSeqHdr = make([]byte, len(data))
-	copy(pub.videoSeqHdr, data)
-	pub.mu.Unlock()
-
-	// TODO: should I lock bofore the entire loop?
-	pub.mu.RLock()
-	defer pub.mu.RUnlock()
-
-	for id, consumer := range pub.consumers {
-		if err := consumer.SendVideoSeqHeader(data); err != nil {
-			log.Printf("ERROR: send video seq hdr to consumer (id %s): %v", id, err)
-		}
-	}
-
-	return nil
 }
 
 // Receiver part
@@ -137,37 +153,12 @@ func (mc *MediaChannel) AddConsumer(consumer Consumer) error {
 	if pub == nil {
 		return ErrNoPublisher
 	}
-	if cns := pub.getConsumer(consumer.ID()); cns != nil {
-		return ErrConsumerExists
-	}
-	pub.addConsumer(consumer)
-	return nil
+	return pub.AddConsumer(consumer)
 }
 
 func (mc *MediaChannel) RemoveConsumer(consumer Consumer) {
 	pub := mc.getPublisher(consumer.PublisherID())
 	if pub != nil {
-		pub.removeConsumer(consumer.ID())
+		pub.RemoveConsumer(consumer)
 	}
-}
-
-func (mc *MediaChannel) GetVideoSeqHeader(id PublisherID) ([]byte, error) {
-	pub := mc.getPublisher(id)
-	if pub == nil {
-		return []byte{}, ErrNoPublisher
-	}
-	pub.mu.RLock()
-	defer pub.mu.RUnlock()
-	return pub.videoSeqHdr, nil
-}
-
-func (mc *MediaChannel) GetLatestVideoKeyFrame(id PublisherID, frame *MediaFrame) error {
-	pub := mc.getPublisher(id)
-	if pub == nil {
-		return ErrNoPublisher
-	}
-	pub.mu.RLock()
-	defer pub.mu.RUnlock()
-	*frame = pub.videoKeyFrame
-	return nil
 }

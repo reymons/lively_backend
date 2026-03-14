@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strings"
 
 	"lively/core/model"
 	"lively/db"
@@ -10,9 +11,14 @@ import (
 	"lively/transport/http/codec"
 )
 
-type getMeRes struct {
+type userRes struct {
 	ID       uint64 `json:"id"`
 	Username string `json:"username"`
+}
+
+func (res *userRes) FromUser(u *model.User) {
+	res.ID = u.ID
+	res.Username = u.Username
 }
 
 type Users struct {
@@ -34,8 +40,19 @@ func (h *Users) GetCurrent(w http.ResponseWriter, req *http.Request) {
 		sendHttpError(w, req, "get user by ID", err)
 		return
 	}
-	codec.EncodeBody(w, http.StatusOK, &getMeRes{
-		ID:       user.ID,
-		Username: user.Username,
-	})
+	var res userRes
+	res.FromUser(&user)
+	codec.EncodeBody(w, http.StatusOK, &res)
+}
+
+func (h *Users) GetByUsername(w http.ResponseWriter, req *http.Request) {
+	username := strings.TrimPrefix(req.URL.Path, "/api/v1/users/usernames/")
+	var user model.User
+	if err := h.users.GetByUsername(req.Context(), h.dbClient, username, &user); err != nil {
+		sendHttpError(w, req, "get user by ID", err)
+		return
+	}
+	var res userRes
+	res.FromUser(&user)
+	codec.EncodeBody(w, http.StatusOK, &res)
 }

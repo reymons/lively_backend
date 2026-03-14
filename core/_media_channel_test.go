@@ -1,3 +1,4 @@
+// TODO: rewrite this shit
 package core
 
 import (
@@ -128,7 +129,8 @@ func TestMediaChannel_AddExistingPublisher(t *testing.T) {
 	}
 }
 
-func TestMediaChannel_RemovePublisher(t *testing.T) {
+func TestMediaChannel_RemovePublisher_RemovesPublisherAndStopsConsumers(t *testing.T) {
+	// TODO: check if consumers have been stopped
 	t.Parallel()
 
 	pubID := getPublisherID()
