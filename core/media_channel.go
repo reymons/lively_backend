@@ -16,6 +16,7 @@ type publisher struct {
 	consumers   map[ConsumerID]consumerData
 	mu          sync.RWMutex
 	videoSeqHdr []byte
+	audioSeqHdr []byte
 }
 
 func NewPublisher(id PublisherID) Publisher {
@@ -33,15 +34,26 @@ func (pub *publisher) hasConsumer(id ConsumerID) bool {
 	return ok
 }
 
-func (pub *publisher) sendVideoSeqHdr(consumer Consumer) error {
+func (pub *publisher) sendSeqHeaders(consumer Consumer) error {
 	pub.mu.RLock()
-	hdr := pub.videoSeqHdr
+	videoHdr := pub.videoSeqHdr
+	audioHdr := pub.audioSeqHdr
 	pub.mu.RUnlock()
 
-	frame := MediaFrame{Type: MediaFrameVideoSeqHdr, Data: hdr}
-	if err := consumer.SendFrame(&frame); err != nil {
-		return err
+	{
+		frame := MediaFrame{Type: MediaFrameVideoSeqHdr, Data: videoHdr}
+		if err := consumer.SendFrame(&frame); err != nil {
+			return fmt.Errorf("send video sequence header: %w", err)
+		}
 	}
+
+	{
+		frame := MediaFrame{Type: MediaFrameAudioSeqHdr, Data: audioHdr}
+		if err := consumer.SendFrame(&frame); err != nil {
+			return fmt.Errorf("send audio sequence header: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -49,8 +61,8 @@ func (pub *publisher) AddConsumer(consumer Consumer) error {
 	if pub.hasConsumer(consumer.ID()) {
 		return ErrConsumerExists
 	}
-	if err := pub.sendVideoSeqHdr(consumer); err != nil {
-		return fmt.Errorf("send video sequence header: %w", err)
+	if err := pub.sendSeqHeaders(consumer); err != nil {
+		return fmt.Errorf("send sequence headers: %w", err)
 	}
 
 	pub.mu.Lock()
@@ -81,11 +93,16 @@ func (pub *publisher) Stop() {
 }
 
 func (pub *publisher) SendFrame(frame *MediaFrame) error {
+	// TODO: make sure header is not too huge in size
 	if frame.Type == MediaFrameVideoSeqHdr {
-		// TODO: make sure header is not too huge in size
 		pub.mu.Lock()
 		pub.videoSeqHdr = make([]byte, len(frame.Data))
 		copy(pub.videoSeqHdr, frame.Data)
+		pub.mu.Unlock()
+	} else if frame.Type == MediaFrameAudioSeqHdr {
+		pub.mu.Lock()
+		pub.audioSeqHdr = make([]byte, len(frame.Data))
+		copy(pub.audioSeqHdr, frame.Data)
 		pub.mu.Unlock()
 	}
 

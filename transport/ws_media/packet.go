@@ -10,8 +10,10 @@ var (
 )
 
 const (
-	PackVideoSeqHdr = iota
-	PackVideoFrame
+	PackVideoFrame uint8 = iota
+	PackVideoSeqHdr
+	PackAudioFrame
+	PackAudioSeqHdr
 )
 
 const packHdrSize = 5

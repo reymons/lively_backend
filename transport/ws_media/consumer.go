@@ -62,6 +62,10 @@ func (c *wsConsumer) SendFrame(frame *core.MediaFrame) error {
 		pack.Type = PackVideoFrame
 	case core.MediaFrameVideoSeqHdr:
 		pack.Type = PackVideoSeqHdr
+	case core.MediaFrameAudio:
+		pack.Type = PackAudioFrame
+	case core.MediaFrameAudioSeqHdr:
+		pack.Type = PackAudioSeqHdr
 	default:
 		return core.ErrUnsupportedFrame
 	}

@@ -15,6 +15,8 @@ var (
 const (
 	MediaFrameVideo uint8 = iota
 	MediaFrameVideoSeqHdr
+	MediaFrameAudio
+	MediaFrameAudioSeqHdr
 )
 
 type MediaFrame struct {

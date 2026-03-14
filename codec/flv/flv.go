@@ -15,6 +15,50 @@ var (
 	ErrNALULenPrefixTooShort = errors.New("actual NALU length is greater than the length header can hold")
 )
 
+type AudioTagHeader struct {
+	SoundFormat uint8
+	SoundRate   uint8
+	SoundSize   uint8
+	SoundType   uint8
+}
+
+func (t *AudioTagHeader) Decode(data []byte) (int, error) {
+	if len(data) < 1 {
+		return 0, ErrBufferTooShort
+	}
+	t.SoundFormat = (data[0] & 0b11110000) >> 4
+	t.SoundRate = (data[0] & 0b00001100) >> 2
+	t.SoundSize = (data[0] & 0b00000010) >> 1
+	t.SoundType = (data[0] & 0b00000001)
+	return 1, nil
+}
+
+const (
+	AACPackTypeSeqHdr uint8 = iota
+	AACPackTypeFrame
+)
+
+type AACAudioTag struct {
+	AudioTagHeader
+
+	PacketType uint8
+	Data       []byte
+}
+
+func (t *AACAudioTag) Decode(data []byte) error {
+	n, err := t.AudioTagHeader.Decode(data)
+	if err != nil {
+		return fmt.Errorf("decode header: %w", err)
+	}
+	data = data[n:]
+	if len(data) < 1 {
+		return ErrBufferTooShort
+	}
+	t.PacketType = data[0]
+	t.Data = data[1:]
+	return nil
+}
+
 const (
 	VideoFrameTypeKey uint8 = iota + 1
 	VideoFrameTypeInter
@@ -50,7 +94,6 @@ func (t *VideoTagHeader) Decode(data []byte) (int, error) {
 const (
 	H264PackTypeSeqHdr uint8 = iota
 	H264PackTypeNALU
-	H264PackTypeSeqEnd
 )
 
 type H264VideoTag struct {

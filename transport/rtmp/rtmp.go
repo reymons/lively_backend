@@ -52,7 +52,7 @@ func (t *Transport) isKeyFrameNALU(nalu *flv.H264NALUnit) bool {
 func (t *Transport) onVideoMessage(mesg *rtmplib.VideoMessage, session *rtmpSession) error {
 	var tag flv.H264VideoTag
 	if err := tag.Decode(mesg.Data); err != nil {
-		return fmt.Errorf("decode flv tag: %w", err)
+		return fmt.Errorf("decode flv video tag: %w", err)
 	}
 
 	if tag.PacketType == flv.H264PackTypeSeqHdr {
@@ -103,6 +103,38 @@ func (t *Transport) onVideoMessage(mesg *rtmplib.VideoMessage, session *rtmpSess
 			}
 		}
 	}
+
+	return nil
+}
+
+func (t *Transport) onAudioMessage(mesg *rtmplib.AudioMessage, session *rtmpSession) error {
+	var tag flv.AACAudioTag
+	if err := tag.Decode(mesg.Data); err != nil {
+		return fmt.Errorf("decode flv audio tag: %w", err)
+	}
+
+	if tag.PacketType == flv.AACPackTypeSeqHdr {
+		frame := core.MediaFrame{
+			Type: core.MediaFrameAudioSeqHdr,
+			Data: tag.Data,
+		}
+		if err := session.pub.SendFrame(&frame); err != nil {
+			return fmt.Errorf("send audio seq header: %w", err)
+		}
+		return nil
+	}
+
+	// TODO: enable audio data later when I figure out the proper way of handling it on the client
+	//if tag.PacketType == flv.AACPackTypeFrame {
+	//	frame := core.MediaFrame{
+	//		Type:      core.MediaFrameAudio,
+	//		Timestamp: mesg.Timestamp,
+	//		Data:      tag.Data,
+	//	}
+	//	if err := session.pub.SendFrame(&frame); err != nil {
+	//		return fmt.Errorf("send audio frame: %w", err)
+	//	}
+	//}
 
 	return nil
 }
@@ -172,6 +204,8 @@ func (t *Transport) onConn(conn *rtmplib.Conn) {
 		switch m := mesg.(type) {
 		case *rtmplib.VideoMessage:
 			err = t.onVideoMessage(m, session)
+		case *rtmplib.AudioMessage:
+			err = t.onAudioMessage(m, session)
 		case *rtmplib.CloseStreamMessage:
 			log.Printf("INFO: stream %d with publisher ID %s closed", stream, session.pub.ID())
 			return
