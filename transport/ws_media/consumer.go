@@ -53,8 +53,9 @@ func (c *wsConsumer) sendPacket(pack *Packet) error {
 
 func (c *wsConsumer) SendFrame(frame *core.MediaFrame) error {
 	pack := Packet{
-		Timestamp: frame.Timestamp,
-		Data:      frame.Data,
+		Timestamp:  frame.Timestamp,
+		Data:       frame.Data,
+		IsKeyFrame: frame.IsKey,
 	}
 
 	switch frame.Type {
