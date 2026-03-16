@@ -12,7 +12,7 @@ import (
 	rtmplib "github.com/reymons/rtmp-go"
 
 	"lively/codec/flv"
-	"lively/core"
+	"lively/core/media"
 	"lively/core/model"
 	"lively/core/service"
 )
@@ -23,21 +23,24 @@ var (
 
 type rtmpSession struct {
 	conn        *rtmplib.Conn
-	pub         core.Publisher
+	userID      uint64
+	pub         media.Publisher
 	ctx         context.Context
 	naluLenSize uint8
 }
 
 type Transport struct {
-	ln        rtmplib.Listener
-	sender    core.MediaChannelSender
-	skService service.StreamKey
+	ln            rtmplib.Listener
+	sender        media.Sender
+	skService     service.StreamKey
+	streamService service.Stream
 }
 
-func NewTransport(sender core.MediaChannelSender, skService service.StreamKey) *Transport {
+func NewTransport(sender media.Sender, skService service.StreamKey, streamService service.Stream) *Transport {
 	return &Transport{
-		sender:    sender,
-		skService: skService,
+		sender:        sender,
+		skService:     skService,
+		streamService: streamService,
 	}
 }
 
@@ -61,8 +64,8 @@ func (t *Transport) onVideoMessage(mesg *rtmplib.VideoMessage, session *rtmpSess
 			return fmt.Errorf("decode sequence header: %w", err)
 		}
 		session.naluLenSize = hdr.NALULenSize
-		frame := core.MediaFrame{
-			Type: core.MediaFrameVideoSeqHdr,
+		frame := media.Frame{
+			Type: media.FrameVideoSeqHdr,
 			Data: tag.Data,
 		}
 		if err := session.pub.SendFrame(&frame); err != nil {
@@ -88,14 +91,14 @@ func (t *Transport) onVideoMessage(mesg *rtmplib.VideoMessage, session *rtmpSess
 			}
 
 			if t.isAllowedNALU(&unit) {
-				frame := core.MediaFrame{
-					Type:      core.MediaFrameVideo,
+				frame := media.Frame{
+					Type:      media.FrameVideo,
 					Timestamp: mesg.Timestamp,
 					Data:      unitBuf,
 					IsKey:     t.isKeyFrameNALU(&unit),
 				}
 				if err := session.pub.SendFrame(&frame); err != nil {
-					if err == core.ErrNoPublisher {
+					if err == media.ErrNoPublisher {
 						return fmt.Errorf("send video data: %w", err)
 					}
 					log.Printf("WARNING: send nalu unit: %s, %v", session.pub.ID(), err)
@@ -114,8 +117,8 @@ func (t *Transport) onAudioMessage(mesg *rtmplib.AudioMessage, session *rtmpSess
 	}
 
 	if tag.PacketType == flv.AACPackTypeSeqHdr {
-		frame := core.MediaFrame{
-			Type: core.MediaFrameAudioSeqHdr,
+		frame := media.Frame{
+			Type: media.FrameAudioSeqHdr,
 			Data: tag.Data,
 		}
 		if err := session.pub.SendFrame(&frame); err != nil {
@@ -126,8 +129,8 @@ func (t *Transport) onAudioMessage(mesg *rtmplib.AudioMessage, session *rtmpSess
 
 	// TODO: enable audio data later when I figure out the proper way of handling it on the client
 	//if tag.PacketType == flv.AACPackTypeFrame {
-	//	frame := core.MediaFrame{
-	//		Type:      core.MediaFrameAudio,
+	//	frame := media.Frame{
+	//		Type:      media.FrameAudio,
 	//		Timestamp: mesg.Timestamp,
 	//		Data:      tag.Data,
 	//	}
@@ -152,8 +155,9 @@ func (t *Transport) onConnect(mesg *rtmplib.ConnectMessage, userData any) error 
 		return fmt.Errorf("get stream key: %w", err)
 	}
 
-	id := core.PublisherID(strconv.FormatUint(sk.UserID, 10))
-	session.pub = core.NewPublisher(id)
+	id := media.PublisherID(strconv.FormatUint(sk.UserID, 10))
+	session.pub = t.sender.NewPublisher(id)
+	session.userID = sk.UserID
 
 	return nil
 }
@@ -187,6 +191,11 @@ func (t *Transport) onConn(conn *rtmplib.Conn) {
 	defer t.sender.RemovePublisher(session.pub)
 	log.Printf("INFO: added a publisher with ID: %s", session.pub.ID())
 
+	if err := t.streamService.StartStream(session.ctx, session.userID); err != nil {
+		log.Printf("ERROR: start RTMP stream: %v", err)
+		return
+	}
+
 	for {
 		mesg, err := conn.ReadStreamMessage(stream)
 		if err != nil {
@@ -216,7 +225,7 @@ func (t *Transport) onConn(conn *rtmplib.Conn) {
 		if err != nil {
 			log.Printf("ERROR: handle RTMP message: %v", err)
 
-			if errors.Is(err, core.ErrNoPublisher) {
+			if errors.Is(err, media.ErrNoPublisher) {
 				return
 			}
 		}

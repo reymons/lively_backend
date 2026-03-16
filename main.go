@@ -7,15 +7,18 @@ import (
 	"time"
 
 	"lively/config"
-	"lively/core"
 	"lively/core/service"
 	"lively/db/pg"
 	"lively/security/jwt"
 	"lively/security/password"
 	"lively/store"
 
+	"lively/infra/mem_pubsub"
+
 	"lively/transport/http"
+	"lively/transport/media_channel"
 	"lively/transport/rtmp"
+	"lively/transport/ws_main"
 	"lively/transport/ws_media"
 )
 
@@ -55,8 +58,10 @@ func main() {
 	streamKeys := store.NewStreamKeys()
 	_ = users
 
+	// Infrastructure
+	eventBus := mem_pubsub.NewBus()
+
 	// Misc
-	channel := core.NewMediaChannel()
 	pswdManager := password.NewManager()
 	jwtService := jwt.NewService(
 		jwt.NewToken(conf.JWTAccessTokenSecret, time.Hour*24*30),
@@ -66,16 +71,16 @@ func main() {
 	// Core services
 	authService := service.NewAuth(dbClient, users, streamKeys, pswdManager)
 	skService := service.NewStreamKey(dbClient, streamKeys)
+	streamService := service.NewStream(eventBus)
 
 	// Transports
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	rtmpTransport := rtmp.NewTransport(channel, skService)
+	mediaChannel := media_channel.New()
+	rtmpTransport := rtmp.NewTransport(mediaChannel, skService, streamService)
 
 	httpTransport := http.NewTransport(
 		[]http.HandlerInfo{
-			{"/ws/streams/", ws_media.NewTransport(channel)},
+			{"/ws/streams/", ws_media.NewTransport(mediaChannel, streamService)},
+			{"/ws/main", ws_main.NewTransport(eventBus.NewSubscriber())},
 		},
 
 		&http.Dependencies{
@@ -90,8 +95,9 @@ func main() {
 		},
 	)
 
+	var wg sync.WaitGroup
+	wg.Add(2)
 	go runRTMPServer(&wg, rtmpTransport, conf)
 	go runHTTPServer(&wg, httpTransport, conf)
-
 	wg.Wait()
 }

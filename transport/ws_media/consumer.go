@@ -5,17 +5,17 @@ import (
 
 	ws "golang.org/x/net/websocket"
 
-	"lively/core"
+	"lively/core/media"
 )
 
 type wsConsumer struct {
-	id     core.ConsumerID
-	pubID  core.PublisherID
+	id     media.ConsumerID
+	pubID  media.PublisherID
 	conn   *ws.Conn
 	sendCh chan []byte
 }
 
-func newWSConsumer(id core.ConsumerID, pubID core.PublisherID, conn *ws.Conn) *wsConsumer {
+func newWSConsumer(id media.ConsumerID, pubID media.PublisherID, conn *ws.Conn) *wsConsumer {
 	return &wsConsumer{
 		id:     id,
 		pubID:  pubID,
@@ -33,11 +33,11 @@ func (c *wsConsumer) readData() {
 	}
 }
 
-func (c *wsConsumer) ID() core.ConsumerID {
+func (c *wsConsumer) ID() media.ConsumerID {
 	return c.id
 }
 
-func (c *wsConsumer) PublisherID() core.PublisherID {
+func (c *wsConsumer) PublisherID() media.PublisherID {
 	return c.pubID
 }
 
@@ -51,7 +51,7 @@ func (c *wsConsumer) sendPacket(pack *Packet) error {
 	return nil
 }
 
-func (c *wsConsumer) SendFrame(frame *core.MediaFrame) error {
+func (c *wsConsumer) SendFrame(frame *media.Frame) error {
 	pack := Packet{
 		Timestamp:  frame.Timestamp,
 		Data:       frame.Data,
@@ -59,16 +59,16 @@ func (c *wsConsumer) SendFrame(frame *core.MediaFrame) error {
 	}
 
 	switch frame.Type {
-	case core.MediaFrameVideo:
+	case media.FrameVideo:
 		pack.Type = PackVideoFrame
-	case core.MediaFrameVideoSeqHdr:
+	case media.FrameVideoSeqHdr:
 		pack.Type = PackVideoSeqHdr
-	case core.MediaFrameAudio:
+	case media.FrameAudio:
 		pack.Type = PackAudioFrame
-	case core.MediaFrameAudioSeqHdr:
+	case media.FrameAudioSeqHdr:
 		pack.Type = PackAudioSeqHdr
 	default:
-		return core.ErrUnsupportedFrame
+		return media.ErrUnsupportedFrame
 	}
 
 	return c.sendPacket(&pack)
