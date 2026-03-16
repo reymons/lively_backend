@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -45,11 +44,6 @@ func (t *Transport) getPublisherID(url string) (media.PublisherID, uint64, error
 	return media.PublisherID(id), userID, nil
 }
 
-func (t *Transport) getIP(addr string) (string, error) {
-	ip, _, err := net.SplitHostPort(addr)
-	return ip, err
-}
-
 func (t *Transport) onConn(conn *ws.Conn) {
 	defer conn.Close()
 
@@ -78,17 +72,12 @@ func (t *Transport) onConn(conn *ws.Conn) {
 
 	// Handle viewer info
 	req := conn.Request()
-	ip, err := t.getIP(req.RemoteAddr)
-	if err != nil {
-		log.Printf("ERROR: get IP: %v", err)
-		return
-	}
-	if err = t.streamService.AddViewer(req.Context(), userID, ip); err != nil {
+	if err = t.streamService.AddViewer(req.Context(), userID, req.RemoteAddr); err != nil {
 		log.Printf("ERROR: add viewer: %v", err)
 		return
 	}
 	defer func() {
-		if err := t.streamService.RemoveViewer(req.Context(), userID, ip); err != nil {
+		if err := t.streamService.RemoveViewer(req.Context(), userID, req.RemoteAddr); err != nil {
 			log.Printf("ERROR: remove viewer: %v", err)
 		}
 	}()
