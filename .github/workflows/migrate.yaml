@@ -38,6 +38,7 @@ jobs:
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           DB_USER: ${{ secrets.DB_USER }}
           DB_PORT: ${{ secrets.DB_EXTERNAL_PORT }}
+          DB_SSL_MODE: ${{ vars.DB_SSL_MODE }}
         run: |
           export MIGRATIONS_DIR=`pwd`/db/pg/migrations
           make migrate

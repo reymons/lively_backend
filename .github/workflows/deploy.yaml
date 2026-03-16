@@ -72,6 +72,7 @@ jobs:
       DB_PORT: ${{ secrets.DB_PORT }}
       DB_EXTERNAL_PORT: ${{ secrets.DB_EXTERNAL_PORT }}
       DB_USER: ${{ secrets.DB_USER }}
+      DB_SSL_MODE: ${{ vars.DB_SSL_MODE }}
       SSH_KEY: ${{ secrets.SSH_KEY }}
       SSH_USER: ${{ secrets.SSH_USER }}
       SSH_HOST: ${{ secrets.SSH_HOST }}
@@ -107,6 +108,7 @@ jobs:
           echo DB_PASSWORD=$DB_PASSWORD >> $env_file
           echo DB_NAME=$DB_NAME >> $env_file
           echo DB_EXTERNAL_PORT=$DB_EXTERNAL_PORT >> $env_file
+          echo DB_SSL_MODE=$DB_SSL_MODE >> $env_file
           echo AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID >> $env_file
           echo AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY >> $env_file
           echo AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION >> $env_file
