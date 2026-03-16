@@ -63,6 +63,7 @@ func main() {
 
 	// Misc
 	pswdManager := password.NewManager()
+
 	jwtService := jwt.NewService(
 		jwt.NewToken(conf.JWTAccessTokenSecret, time.Hour*24*30),
 		jwt.NewToken("", 0),
