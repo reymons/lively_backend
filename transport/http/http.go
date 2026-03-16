@@ -61,7 +61,6 @@ func (t *Transport) RunServer(addr string, allowedOrigins []string) error {
 	}
 
 	h := http.Handler(mux)
-	h = middleware.Logger(h)
 	h = middleware.CORS(h, middleware.CORSConfig{
 		Credentials: true,
 		Origins:     allowedOrigins,
@@ -76,6 +75,8 @@ func (t *Transport) RunServer(addr string, allowedOrigins []string) error {
 			http.MethodDelete,
 		},
 	})
+	h = middleware.Logger(h)
+	h = middleware.RealIP(h)
 
 	srv := http.Server{
 		Addr:    addr,
