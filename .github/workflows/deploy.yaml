@@ -1,0 +1,154 @@
+name: Deploy
+
+on:
+  push:
+    paths:
+      - codec/**
+      - config/**
+      - core/**
+      - db/**/*.go
+      - infra/**
+      - middleware/**
+      - security/**
+      - store/**
+      - transport/**
+      - main.go
+    branches:
+      - master
+
+jobs:
+  test:
+    if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Run tests
+        run: make test
+
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+    permissions:
+      contents: read
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Build
+        run: |
+          img_name=backend
+          img_tag=$(openssl rand -hex 16 | openssl dgst -md5 | grep -Eo '[a-f0-9]{32}')
+          docker build -t $img_name:$img_tag -f build/backend.Dockerfile .
+          artifacts_dir=__artifacts__
+          mkdir $artifacts_dir
+          docker save -o $artifacts_dir/build_img $img_name:$img_tag
+          echo "export BUILD_IMG_NAME=$img_name" >> $artifacts_dir/build_env
+          echo "export BUILD_IMG_TAG=$img_tag" >> $artifacts_dir/build_env
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build_artifacts
+          path: ./__artifacts__
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    environment: production
+    env:
+      HTTP_ALLOWED_ORIGINS: ${{ vars.HTTP_ALLOWED_ORIGINS }}
+      JWT_ACCESS_TOKEN_SECRET: ${{ secrets.JWT_ACCESS_TOKEN_SECRET }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_REGISTRY: ${{ secrets.AWS_REGISTRY }}
+      AWS_REPOSITORY: ${{ secrets.AWS_REPOSITORY }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION }}
+      AWS_INSTANCE_SG_ID: ${{ secrets.AWS_INSTANCE_SG_ID }}
+      DB_HOST: ${{ secrets.DB_HOST }}
+      DB_NAME: ${{ secrets.DB_NAME }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      DB_PORT: ${{ secrets.DB_PORT }}
+      DB_EXTERNAL_PORT: ${{ secrets.DB_EXTERNAL_PORT }}
+      DB_USER: ${{ secrets.DB_USER }}
+      SSH_KEY: ${{ secrets.SSH_KEY }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: build
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build_artifacts
+          path: .
+      - name: Get runner IP address
+        id: ip
+        uses: haythem/public-ip@v1.3
+      - name: Whitelist runner IP address
+        run: |
+          aws ec2 authorize-security-group-ingress \
+            --group-id $AWS_INSTANCE_SG_ID \
+            --protocol tcp \
+            --port 22 \
+            --cidr ${{ steps.ip.outputs.ipv4 }}/32
+      - name: Create environment file
+        id: env_cfg
+        run: |
+          env_file=.env.deploy
+          echo JWT_ACCESS_TOKEN_SECRET=$JWT_ACCESS_TOKEN_SECRET >> $env_file
+          echo HTTP_ALLOWED_ORIGINS=$HTTP_ALLOWED_ORIGINS >> $env_file
+          echo DB_PORT=$DB_PORT >> $env_file
+          echo DB_HOST=$DB_HOST >> $env_file
+          echo DB_USER=$DB_USER >> $env_file
+          echo DB_PASSWORD=$DB_PASSWORD >> $env_file
+          echo DB_NAME=$DB_NAME >> $env_file
+          echo DB_EXTERNAL_PORT=$DB_EXTERNAL_PORT >> $env_file
+          echo AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID >> $env_file
+          echo AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY >> $env_file
+          echo AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION >> $env_file
+          echo env_file=$env_file >> $GITHUB_OUTPUT
+      - name: Deploy
+        env:
+          ENV_FILE: ${{ steps.env_cfg.outputs.env_file }}
+        run: |
+          echo "Pulling the image from the AWS..."
+          source build_env
+          aws_img=$AWS_REGISTRY/$AWS_REPOSITORY:$BUILD_IMG_TAG
+          echo DOCKER_IMG_BACKEND=$aws_img >> $ENV_FILE
+          aws ecr get-login-password \
+            --region $AWS_DEFAULT_REGION | \
+            docker login --username AWS --password-stdin $AWS_REGISTRY
+          docker load -i build_img
+          docker tag $BUILD_IMG_NAME:$BUILD_IMG_TAG $aws_img
+          docker push $aws_img
+          echo "Setting up the SSH private key and host..."
+          eval $(ssh-agent -s)
+          echo $SSH_KEY | base64 --decode | ssh-add -
+          mkdir ~/.ssh
+          ssh-keyscan $SSH_HOST >> ~/.ssh/known_hosts
+          echo "Copying build files to the remote server..."
+          app_dir=/home/$SSH_USER/app
+          ssh $SSH_USER@$SSH_HOST "mkdir -p $app_dir"
+          scp $ENV_FILE $SSH_USER@$SSH_HOST:$app_dir/.env
+          scp build/docker-compose.yml $SSH_USER@$SSH_HOST:$app_dir/docker-compose.yml
+          scp build/deploy.sh $SSH_USER@$SSH_HOST:$app_dir/deploy.sh
+          echo "Executing the build command on the remote server..."
+          ssh $SSH_USER@$SSH_HOST \
+          "cd $app_dir && chmod +x deploy.sh && ./deploy.sh \
+          $AWS_ACCESS_KEY_ID \
+          $AWS_SECRET_ACCESS_KEY \
+          $AWS_DEFAULT_REGION \
+          $AWS_REGISTRY \
+          $aws_img"
+      - name: Revoke runner IP address
+        if: ${{ always() }}
+        run: |
+          aws ec2 revoke-security-group-ingress \
+            --group-id $AWS_INSTANCE_SG_ID \
+            --protocol tcp \
+            --port 22 \
+            --cidr ${{ steps.ip.outputs.ipv4 }}/32

@@ -1,0 +1,51 @@
+name: "Migrate DB"
+
+on:
+  push:
+    paths:
+      - "db/pg/migrations/**/*.sql"
+    branches:
+      - master
+
+jobs:
+  main:
+    if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      DB_EXTERNAL_PORT: ${{ secrets.DB_EXTERNAL_PORT }}
+      AWS_INSTANCE_SG_ID: ${{ secrets.AWS_INSTANCE_SG_ID }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Get runner IP address
+        id: ip
+        uses: haythem/public-ip@v1.3
+      - name: Whitelist runner IP address
+        run: |
+          aws ec2 authorize-security-group-ingress \
+            --group-id $AWS_INSTANCE_SG_ID \
+            --protocol tcp \
+            --port $DB_EXTERNAL_PORT \
+            --cidr ${{ steps.ip.outputs.ipv4 }}/32
+      - name: "Apply migrations"
+        env:
+          DB_HOST: ${{ secrets.SSH_HOST }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PORT: ${{ secrets.DB_EXTERNAL_PORT }}
+        run: |
+          export MIGRATIONS_DIR=`pwd`/db/pg/migrations
+          make migrate
+      - name: Revoke runner IP address
+        if: ${{ always() }}
+        run: |
+          aws ec2 revoke-security-group-ingress \
+            --group-id $AWS_INSTANCE_SG_ID \
+            --protocol tcp \
+            --port $DB_EXTERNAL_PORT \
+            --cidr ${{ steps.ip.outputs.ipv4 }}/32

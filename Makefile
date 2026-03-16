@@ -1,10 +1,16 @@
-.PHONY: dev test migrate
+GC=go
+BUILD_DIR=./bin
+
+.PHONY: dev test migrate build
 
 test:
-	go test -v ./...
+	$(GC) test -v ./...
 
 dev:
-	go run .
+	$(GC) run .
+
+build:
+	$(GC) build -o $(BUILD_DIR)/backend .
 
 migrate:
 	MIGRATIONS_DIR=`pwd`/db/pg/migrations go run scripts/migrate.go

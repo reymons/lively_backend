@@ -1,0 +1,53 @@
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: db
+    hostname: ${DB_HOST}
+    networks:
+      - main
+    ports:
+      # Needed for migrations
+      - ${DB_EXTERNAL_PORT}:${DB_PORT}
+    environment:
+      PGHOST: ${DB_HOST}
+      PGPORT: ${DB_PORT}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+      PGDATA: /var/lib/postgresql/data/lively
+    volumes:
+      - db-data:/var/lib/postgresql/data/lively
+    restart: always
+
+  backend:
+    image: ${DOCKER_IMG_BACKEND}
+    container_name: backend 
+    hostname: backend
+    networks:
+      - main
+    ports:
+      - 6969:80
+      - 1935:1935
+    environment:
+      HTTP_SERVER_HOST: backend
+      HTTP_SERVER_PORT: 80
+      HTTP_ALLOWED_ORIGINS: ${HTTP_ALLOWED_ORIGINS}
+      RTMP_SERVER_HOST: backend
+      RTMP_SERVER_PORT: 1935
+      JWT_ACCESS_TOKEN_SECRET: ${JWT_ACCESS_TOKEN_SECRET}
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+      DB_SSL_MODE: disable
+    restart: always
+    depends_on:
+      - db
+
+volumes:
+  db-data:   
+
+networks:
+  main:
+    driver: bridge
