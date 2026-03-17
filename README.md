@@ -19,3 +19,7 @@ A simple in-memory event bus is used for communication between transports<br>
 For a persistent storage, PostgreSQL and standard SQL library are used<br><br>
 
 ![](https://github.com/reymons/lively_backend/raw/master/doc/arch.png)
+
+## Deploy
+- The platform is deployed on AWS using CloudFormation<br>You can set up the infrastructure using `./aws/create-stack.sh` or delete it with `./aws/delete-stack.sh`
+- For containerization, Docker Compose is used
