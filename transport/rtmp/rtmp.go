@@ -127,17 +127,16 @@ func (t *Transport) onAudioMessage(mesg *rtmplib.AudioMessage, session *rtmpSess
 		return nil
 	}
 
-	// TODO: enable audio data later when I figure out the proper way of handling it on the client
-	//if tag.PacketType == flv.AACPackTypeFrame {
-	//	frame := media.Frame{
-	//		Type:      media.FrameAudio,
-	//		Timestamp: mesg.Timestamp,
-	//		Data:      tag.Data,
-	//	}
-	//	if err := session.pub.SendFrame(&frame); err != nil {
-	//		return fmt.Errorf("send audio frame: %w", err)
-	//	}
-	//}
+	if tag.PacketType == flv.AACPackTypeFrame {
+		frame := media.Frame{
+			Type:      media.FrameAudio,
+			Timestamp: mesg.Timestamp,
+			Data:      tag.Data,
+		}
+		if err := session.pub.SendFrame(&frame); err != nil {
+			return fmt.Errorf("send audio frame: %w", err)
+		}
+	}
 
 	return nil
 }
@@ -225,7 +224,7 @@ func (t *Transport) onConn(conn *rtmplib.Conn) {
 		if err != nil {
 			log.Printf("ERROR: handle RTMP message: %v", err)
 
-			if errors.Is(err, media.ErrNoPublisher) {
+			if errors.Is(err, flv.ErrInvalidCodec) {
 				return
 			}
 		}

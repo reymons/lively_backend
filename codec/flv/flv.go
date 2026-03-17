@@ -15,21 +15,27 @@ var (
 	ErrNALULenPrefixTooShort = errors.New("actual NALU length is greater than the length header can hold")
 )
 
+// Audio
+
+const (
+	AudioCodecAAC = 10
+)
+
 type AudioTagHeader struct {
-	SoundFormat uint8
-	SoundRate   uint8
-	SoundSize   uint8
-	SoundType   uint8
+	Codec       uint8
+	SampleRate  uint8
+	BitDepth    uint8
+	ChannelType uint8
 }
 
 func (t *AudioTagHeader) Decode(data []byte) (int, error) {
 	if len(data) < 1 {
 		return 0, ErrBufferTooShort
 	}
-	t.SoundFormat = (data[0] & 0b11110000) >> 4
-	t.SoundRate = (data[0] & 0b00001100) >> 2
-	t.SoundSize = (data[0] & 0b00000010) >> 1
-	t.SoundType = (data[0] & 0b00000001)
+	t.Codec = (data[0] & 0b11110000) >> 4
+	t.SampleRate = (data[0] & 0b00001100) >> 2
+	t.BitDepth = (data[0] & 0b00000010) >> 1
+	t.ChannelType = (data[0] & 0b00000001)
 	return 1, nil
 }
 
@@ -50,6 +56,9 @@ func (t *AACAudioTag) Decode(data []byte) error {
 	if err != nil {
 		return fmt.Errorf("decode header: %w", err)
 	}
+	if t.AudioTagHeader.Codec != AudioCodecAAC {
+		return ErrInvalidCodec
+	}
 	data = data[n:]
 	if len(data) < 1 {
 		return ErrBufferTooShort
@@ -58,6 +67,8 @@ func (t *AACAudioTag) Decode(data []byte) error {
 	t.Data = data[1:]
 	return nil
 }
+
+// Video
 
 const (
 	VideoFrameTypeKey uint8 = iota + 1
