@@ -14,6 +14,8 @@ type Publisher interface {
 	// Sends a frame to the publisher's consumers
 	SendFrame(frame *Frame) error
 
+	SendMetaData(meta *MetaData) error
+
 	// Stops the publisher from sending further frames
 	// The publisher must stop all its consumers as well
 	Stop()

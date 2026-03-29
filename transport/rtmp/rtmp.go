@@ -141,6 +141,19 @@ func (t *Transport) onAudioMessage(mesg *rtmplib.AudioMessage, session *rtmpSess
 	return nil
 }
 
+func (t *Transport) onMetaDataMessage(mesg *rtmplib.MetaDataMessage, session *rtmpSession) error {
+	meta := media.MetaData{
+		VideoWidth:      mesg.Width,
+		VideoHeight:     mesg.Height,
+		VideoFrameRate:  mesg.FrameRate,
+		VideoDataRate:   mesg.VideoDataRate,
+		AudioChannels:   mesg.AudioChannels,
+		AudioSampleRate: mesg.AudioSampleRate,
+		AudioDataRate:   mesg.AudioDataRate,
+	}
+	return session.pub.SendMetaData(&meta)
+}
+
 func (t *Transport) onConnect(mesg *rtmplib.ConnectMessage, userData any) error {
 	session, ok := userData.(*rtmpSession)
 	if !ok {
@@ -218,7 +231,7 @@ func (t *Transport) onConn(conn *rtmplib.Conn) {
 			log.Printf("INFO: stream %d with publisher ID %s closed", stream, session.pub.ID())
 			return
 		case *rtmplib.MetaDataMessage:
-			log.Printf("INFO: meta: %+v", m)
+			err = t.onMetaDataMessage(m, session)
 		}
 
 		if err != nil {

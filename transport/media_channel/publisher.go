@@ -14,11 +14,13 @@ type consumerData struct {
 }
 
 type publisher struct {
-	id          media.PublisherID
-	consumers   map[media.ConsumerID]consumerData
-	mu          sync.RWMutex
-	videoSeqHdr []byte
-	audioSeqHdr []byte
+	id            media.PublisherID
+	consumers     map[media.ConsumerID]consumerData
+	mu            sync.RWMutex
+	videoSeqHdr   []byte
+	audioSeqHdr   []byte
+	meta          media.MetaData
+	metaSavedOnce bool
 }
 
 func newPublisher(id media.PublisherID) *publisher {
@@ -36,27 +38,31 @@ func (pub *publisher) hasConsumer(id media.ConsumerID) bool {
 	return ok
 }
 
-func (pub *publisher) sendSeqHeaders(consumer media.Consumer) error {
+func (pub *publisher) sendInitialData(consumer media.Consumer) error {
 	pub.mu.RLock()
 	videoHdr := pub.videoSeqHdr
 	audioHdr := pub.audioSeqHdr
+	meta := pub.meta
+	metaSavedOnce := pub.metaSavedOnce
 	pub.mu.RUnlock()
 
-	{
-		if len(videoHdr) > 0 {
-			frame := media.Frame{Type: media.FrameVideoSeqHdr, Data: videoHdr}
-			if err := consumer.SendFrame(&frame); err != nil {
-				return fmt.Errorf("send video sequence header: %w", err)
-			}
+	if metaSavedOnce {
+		if err := consumer.SendMetaData(&meta); err != nil {
+			return fmt.Errorf("send meta data: %w", err)
 		}
 	}
 
-	{
-		if len(audioHdr) > 0 {
-			frame := media.Frame{Type: media.FrameAudioSeqHdr, Data: audioHdr}
-			if err := consumer.SendFrame(&frame); err != nil {
-				return fmt.Errorf("send audio sequence header: %w", err)
-			}
+	if len(videoHdr) > 0 {
+		frame := media.Frame{Type: media.FrameVideoSeqHdr, Data: videoHdr}
+		if err := consumer.SendFrame(&frame); err != nil {
+			return fmt.Errorf("send video sequence header: %w", err)
+		}
+	}
+
+	if len(audioHdr) > 0 {
+		frame := media.Frame{Type: media.FrameAudioSeqHdr, Data: audioHdr}
+		if err := consumer.SendFrame(&frame); err != nil {
+			return fmt.Errorf("send audio sequence header: %w", err)
 		}
 	}
 
@@ -67,7 +73,7 @@ func (pub *publisher) AddConsumer(consumer media.Consumer) error {
 	if pub.hasConsumer(consumer.ID()) {
 		return media.ErrConsumerExists
 	}
-	if err := pub.sendSeqHeaders(consumer); err != nil {
+	if err := pub.sendInitialData(consumer); err != nil {
 		return fmt.Errorf("send sequence headers: %w", err)
 	}
 
@@ -130,5 +136,22 @@ func (pub *publisher) SendFrame(frame *media.Frame) error {
 		}
 	}
 
+	return nil
+}
+
+func (pub *publisher) SendMetaData(meta *media.MetaData) error {
+	pub.mu.Lock()
+	pub.meta = *meta
+	pub.metaSavedOnce = true
+	pub.mu.Unlock()
+
+	pub.mu.RLock()
+	defer pub.mu.RUnlock()
+
+	for id, data := range pub.consumers {
+		if err := data.consumer.SendMetaData(meta); err != nil {
+			log.Printf("ERROR: send meta data to consumer (id %s): %v", id, err)
+		}
+	}
 	return nil
 }

@@ -1,6 +1,7 @@
 package ws_media
 
 import (
+	"fmt"
 	"log"
 
 	ws "golang.org/x/net/websocket"
@@ -71,6 +72,17 @@ func (c *wsConsumer) SendFrame(frame *media.Frame) error {
 		return media.ErrUnsupportedFrame
 	}
 
+	return c.sendPacket(&pack)
+}
+
+func (c *wsConsumer) SendMetaData(meta *media.MetaData) error {
+	buf := make([]byte, media.MetaDataMaxEncodedSize)
+	n, err := meta.Encode(buf)
+	if err != nil {
+		return fmt.Errorf("encode meta data: %w", err)
+	}
+	buf = buf[:n]
+	pack := Packet{Type: PackMetaData, Data: buf}
 	return c.sendPacket(&pack)
 }
 

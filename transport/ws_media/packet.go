@@ -14,6 +14,7 @@ const (
 	PackVideoSeqHdr
 	PackAudioFrame
 	PackAudioSeqHdr
+	PackMetaData
 )
 
 const packHdrSize = 5

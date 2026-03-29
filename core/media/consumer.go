@@ -15,6 +15,8 @@ type Consumer interface {
 	// The implementation may wish to return ErrUnsupportedFrame is a frame's type is unsupported
 	SendFrame(frame *Frame) error
 
+	SendMetaData(meta *MetaData) error
+
 	// Stops the consumer from receiveing frames
 	// The implementation may wish stop its underlying network connection
 	Stop()
