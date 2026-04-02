@@ -9,4 +9,3 @@ CREATE TABLE stream_keys (
     FOREIGN KEY (user_id) REFERENCES users(id),
     UNIQUE (stream_key, user_id)
 );
---
