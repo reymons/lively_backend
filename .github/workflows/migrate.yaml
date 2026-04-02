@@ -10,7 +10,7 @@ on:
 jobs:
   main:
     if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     environment: production
     env:
       DB_EXTERNAL_PORT: ${{ secrets.DB_EXTERNAL_PORT }}
@@ -23,7 +23,7 @@ jobs:
         uses: actions/checkout@v4
       - name: Get runner IP address
         id: ip
-        uses: haythem/public-ip@v1.3
+        run: echo "ipv4=$(curl -s https://checkip.amazonaws.com)" >> $GITHUB_OUTPUT
       - name: Whitelist runner IP address
         run: |
           aws ec2 authorize-security-group-ingress \

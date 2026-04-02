@@ -8,3 +8,4 @@ var (
 	ErrUsernameTaken      = errors.New("username taken")
 	ErrInactiveStreamKey  = errors.New("inactive stream key")
 )
+//

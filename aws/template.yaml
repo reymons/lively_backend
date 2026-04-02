@@ -10,9 +10,9 @@ Parameters:
   InstanceType:
     Description: Backend
     Type: String
-    Default: t2.micro
+    Default: t4g.micro
     AllowedValues:
-      - t2.micro
+      - t4g.micro
     ConstraintDescription: must be a valid EC2 instance type
 
   IP:

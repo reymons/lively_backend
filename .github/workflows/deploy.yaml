@@ -19,7 +19,7 @@ on:
 jobs:
   test:
     if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
     steps:
@@ -29,7 +29,7 @@ jobs:
         run: make test
 
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     needs: test
     permissions:
       contents: read
@@ -54,7 +54,7 @@ jobs:
           path: ./__artifacts__
 
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     needs: build
     environment: production
     env:
@@ -88,7 +88,7 @@ jobs:
           path: .
       - name: Get runner IP address
         id: ip
-        uses: haythem/public-ip@v1.3
+        run: echo "ipv4=$(curl -s https://checkip.amazonaws.com)" >> $GITHUB_OUTPUT
       - name: Whitelist runner IP address
         run: |
           aws ec2 authorize-security-group-ingress \

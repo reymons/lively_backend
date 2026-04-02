@@ -3,7 +3,7 @@
 set -eu
 
 name=BackendStack
-template=file://$PWD/deploy/template.yaml
+template=file://$PWD/aws/template.yaml
 key_name=main
 key_filename=$PWD/key.pem
 inst_name=backend
