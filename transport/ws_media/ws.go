@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/gobwas/ws"
 	"github.com/google/uuid"
-	ws "golang.org/x/net/websocket"
 
 	"lively/core/media"
 	"lively/core/service"
@@ -44,10 +44,15 @@ func (t *Transport) getPublisherID(url string) (media.PublisherID, uint64, error
 	return media.PublisherID(id), userID, nil
 }
 
-func (t *Transport) onConn(conn *ws.Conn) {
+func (t *Transport) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	conn, _, _, err := ws.UpgradeHTTP(req, w)
+	if err != nil {
+		log.Printf("ERROR: upgrade HTTP: %v", err)
+		return
+	}
 	defer conn.Close()
 
-	pubID, userID, err := t.getPublisherID(conn.Request().URL.Path)
+	pubID, userID, err := t.getPublisherID(req.URL.Path)
 	if err != nil {
 		log.Printf("ERROR: get publisher ID: %v", err)
 		return
@@ -60,39 +65,5 @@ func (t *Transport) onConn(conn *ws.Conn) {
 	}
 	cnsID := media.ConsumerID(id.String())
 	consumer := newWSConsumer(cnsID, pubID, conn)
-
-	go consumer.readData()
-
-	if err := t.receiver.AddConsumer(consumer); err != nil {
-		log.Printf("ERROR: register consumer: %v", err)
-		return
-	}
-	defer t.receiver.RemoveConsumer(consumer)
-	log.Printf("INFO: added a consumer with id %s and pub id %s", consumer.ID(), consumer.PublisherID())
-
-	// Handle viewer info
-	req := conn.Request()
-	if err = t.streamService.AddViewer(req.Context(), userID, req.RemoteAddr); err != nil {
-		log.Printf("ERROR: add viewer: %v", err)
-		return
-	}
-	defer func() {
-		if err := t.streamService.RemoveViewer(req.Context(), userID, req.RemoteAddr); err != nil {
-			log.Printf("ERROR: remove viewer: %v", err)
-		}
-	}()
-
-	for {
-		// Dummy reader for now since a user is not supposed to send any data
-		var buf []byte
-		if err := ws.Message.Receive(consumer.conn, &buf); err != nil {
-			log.Printf("INFO: WS connection closed: %s", conn.Request().RemoteAddr)
-			return
-		}
-	}
-}
-
-func (t *Transport) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	handler := ws.Handler(t.onConn)
-	handler.ServeHTTP(w, req)
+	consumer.run(t.receiver, t.streamService, req, userID)
 }

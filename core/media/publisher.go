@@ -11,8 +11,9 @@ type Publisher interface {
 
 	RemoveConsumer(consumer Consumer)
 
-	// Sends a frame to the publisher's consumers
-	SendFrame(frame *Frame) error
+	AcquireBuffer() *SharedBuffer
+
+	SendMessage(mesg *Message)
 
 	SendMetaData(meta *MetaData) error
 

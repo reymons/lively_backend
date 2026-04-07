@@ -38,10 +38,10 @@ func (mc *MediaChannel) AddPublisher(pub media.Publisher) error {
 }
 
 func (mc *MediaChannel) RemovePublisher(pub media.Publisher) {
-	pub.Stop()
 	mc.mu.Lock()
 	delete(mc.publishers, pub.ID())
 	mc.mu.Unlock()
+	pub.Stop()
 }
 
 func (mc *MediaChannel) AddConsumer(consumer media.Consumer) error {
