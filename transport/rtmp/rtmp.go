@@ -215,8 +215,9 @@ func (t *Transport) sendAudioData(mesg *rtmplib.AudioMessage, session *rtmpSessi
 		if !firstMesg {
 			mesg.Flags |= media.FlagContinuation
 		}
-
 		session.pub.SendMessage(&mesg)
+
+		sharedBuf.Release()
 		sharedBuf = nil
 		firstMesg = false
 	}

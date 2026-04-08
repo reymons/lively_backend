@@ -24,6 +24,7 @@ type publisher struct {
 
 func newPublisher(id media.PublisherID) *publisher {
 	pool := &sync.Pool{}
+
 	pool.New = func() any {
 		buf := make([]byte, 8192)
 		return media.NewSharedBuffer(pool, buf, 0)
