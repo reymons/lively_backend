@@ -58,7 +58,7 @@ func NewTransport(sender media.Sender, skService service.StreamKey, streamServic
 }
 
 func (t *Transport) sendSeqHeader(typ uint8, r io.Reader, toRead uint32, session *rtmpSession) error {
-	sharedBuf := session.pub.AcquireBuffer()
+	sharedBuf := session.pub.AcquireAudioBuffer()
 	defer sharedBuf.Release()
 
 	n, err := sharedBuf.ReadN(r, int(toRead))
@@ -123,7 +123,7 @@ func (t *Transport) sendVideoData(mesg *rtmplib.VideoMessage, session *rtmpSessi
 		return false, nil
 	}
 
-	sharedBuf := session.pub.AcquireBuffer()
+	sharedBuf := session.pub.AcquireVideoBuffer()
 	if _, err := sharedBuf.Write(naluHdr); err != nil {
 		sharedBuf.Release()
 		return false, fmt.Errorf("write NALU header: %w", err)
@@ -134,7 +134,7 @@ func (t *Transport) sendVideoData(mesg *rtmplib.VideoMessage, session *rtmpSessi
 
 	for remaining > 0 {
 		if sharedBuf == nil {
-			sharedBuf = session.pub.AcquireBuffer()
+			sharedBuf = session.pub.AcquireVideoBuffer()
 		}
 
 		n, err := sharedBuf.ReadN(mesg.Data, remaining)
@@ -196,7 +196,7 @@ func (t *Transport) sendAudioData(mesg *rtmplib.AudioMessage, session *rtmpSessi
 
 	for remaining > 0 {
 		if sharedBuf == nil {
-			sharedBuf = session.pub.AcquireBuffer()
+			sharedBuf = session.pub.AcquireAudioBuffer()
 		}
 
 		n, err := sharedBuf.ReadN(mesg.Data, int(remaining))
@@ -281,9 +281,21 @@ func (t *Transport) onPublish(mesg *rtmplib.PublishStreamMessage, userData any) 
 	return nil
 }
 
+func (t *Transport) log(prfx, mesg string, conn *rtmplib.Conn) {
+	log.Printf("%s: RTMP: %s: %s", prfx, conn.RemoteAddr().String(), mesg)
+}
+
+func (t *Transport) logInfo(mesg string, conn *rtmplib.Conn) {
+	t.log("INFO", mesg, conn)
+}
+
+func (t *Transport) logError(prfx string, err error, conn *rtmplib.Conn) {
+	t.log("ERROR", fmt.Sprintf("%s: %s", prfx, err.Error()), conn)
+}
+
 func (t *Transport) onConn(conn *rtmplib.Conn) {
 	defer conn.Close()
-	log.Printf("INFO: new RTMP conn: %s", conn.RemoteAddr().String())
+	t.logInfo("new conn", conn)
 
 	session := &rtmpSession{
 		ctx:  context.TODO(),
@@ -295,19 +307,19 @@ func (t *Transport) onConn(conn *rtmplib.Conn) {
 		OnPublish: t.onPublish,
 	})
 	if err != nil {
-		log.Printf("ERROR: accept stream: %v", err)
+		t.logError("accept stream", err, conn)
 		return
 	}
 
 	if err := t.sender.AddPublisher(session.pub); err != nil {
-		log.Printf("ERROR: add publisher: %v", err)
+		t.logError("add publisher", err, conn)
 		return
 	}
 	defer t.sender.RemovePublisher(session.pub)
-	log.Printf("INFO: added a publisher with ID: %s", session.pub.ID())
+	t.logInfo(fmt.Sprintf("added a publisher with ID %s", session.pub.ID()), conn)
 
 	if err := t.streamService.StartStream(session.ctx, session.userID); err != nil {
-		log.Printf("ERROR: start RTMP stream: %v", err)
+		t.logError("start stream", err, conn)
 		return
 	}
 
@@ -318,9 +330,9 @@ func (t *Transport) onConn(conn *rtmplib.Conn) {
 				continue
 			}
 			if err == rtmplib.ErrConnClosed {
-				log.Printf("INFO: RTMP connection closed: %s", conn.RemoteAddr().String())
+				t.logInfo("connection closed", conn)
 			} else {
-				log.Printf("ERROR: read message: %v", err)
+				t.logError("read message", err, conn)
 			}
 			return
 		}
@@ -333,12 +345,12 @@ func (t *Transport) onConn(conn *rtmplib.Conn) {
 		case *rtmplib.MetaDataMessage:
 			err = t.onMetaDataMessage(m, session)
 		case *rtmplib.CloseStreamMessage:
-			log.Printf("INFO: stream %d with publisher ID %s closed", stream, session.pub.ID())
+			t.logInfo(fmt.Sprintf("stream %d with publisher ID %s closed", stream, session.pub.ID()), conn)
 			return
 		}
 
 		if err != nil {
-			log.Printf("ERROR: handle RTMP message: %v", err)
+			t.logError("handle message", err, conn)
 			return
 		}
 	}
@@ -360,7 +372,7 @@ func (t *Transport) RunServer(addr string, tlsConf *tls.Config) error {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			log.Printf("ERROR: accept RTMP conn: %v", err)
+			log.Printf("ERROR: RTMP: accept conn: %v", err)
 			continue
 		}
 

@@ -8,7 +8,7 @@ require (
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.9.1
-	github.com/reymons/rtmp-go v1.2.0
+	github.com/reymons/rtmp-go v1.2.1
 	golang.org/x/crypto v0.49.0
 	golang.org/x/net v0.52.0
 )

@@ -16,23 +16,30 @@ type publisher struct {
 	id          media.PublisherID
 	consumers   map[media.ConsumerID]consumerData
 	mu          sync.RWMutex
-	pool        *sync.Pool
+	videoPool   *sync.Pool
+	audioPool   *sync.Pool
 	videoSeqHdr *media.SharedBuffer
 	audioSeqHdr *media.SharedBuffer
 	meta        *media.SharedBuffer
 }
 
 func newPublisher(id media.PublisherID) *publisher {
-	pool := &sync.Pool{}
+	videoPool := &sync.Pool{}
+	videoPool.New = func() any {
+		buf := make([]byte, 64*1024)
+		return media.NewSharedBuffer(videoPool, buf, 0)
+	}
 
-	pool.New = func() any {
-		buf := make([]byte, 8192)
-		return media.NewSharedBuffer(pool, buf, 0)
+	audioPool := &sync.Pool{}
+	audioPool.New = func() any {
+		buf := make([]byte, 512)
+		return media.NewSharedBuffer(audioPool, buf, 0)
 	}
 
 	return &publisher{
-		id:   id,
-		pool: pool,
+		id:        id,
+		videoPool: videoPool,
+		audioPool: audioPool,
 	}
 }
 
@@ -40,8 +47,14 @@ func (pub *publisher) ID() media.PublisherID {
 	return pub.id
 }
 
-func (pub *publisher) AcquireBuffer() *media.SharedBuffer {
-	buf := pub.pool.Get().(*media.SharedBuffer)
+func (pub *publisher) AcquireVideoBuffer() *media.SharedBuffer {
+	buf := pub.videoPool.Get().(*media.SharedBuffer)
+	buf.Acquire(1)
+	return buf
+}
+
+func (pub *publisher) AcquireAudioBuffer() *media.SharedBuffer {
+	buf := pub.audioPool.Get().(*media.SharedBuffer)
 	buf.Acquire(1)
 	return buf
 }
@@ -56,21 +69,20 @@ func (pub *publisher) holdBuffer(buf *media.SharedBuffer, copy bool) *media.Shar
 }
 
 func (pub *publisher) sendMessage(consumer media.Consumer, mesg *media.Message) bool {
-	mesg.Data.Acquire(1)
-
 	select {
 	case consumer.Messages() <- *mesg:
 		return true
 	default:
-		mesg.Data.Release()
 		return false
 	}
 }
 
 func (pub *publisher) sendMessageStop(consumer media.Consumer, mesg *media.Message) bool {
+	mesg.Data.Acquire(1)
 	if pub.sendMessage(consumer, mesg) {
 		return true
 	}
+	mesg.Data.Release()
 	pub.mu.Lock()
 	pub.stopConsumer(consumer)
 	pub.mu.Unlock()
@@ -135,8 +147,11 @@ func (pub *publisher) SendMessage(mesg *media.Message) {
 
 	pub.mu.RLock()
 	{
+		mesg.Data.Acquire(len(pub.consumers))
+
 		for id, data := range pub.consumers {
 			if mesg.Type == media.MesgVideo && !data.sentVideoKeyFrame && (!mesg.IsKeyFrame() || mesg.IsContinuation()) {
+				mesg.Data.Release()
 				continue
 			}
 
@@ -152,11 +167,13 @@ func (pub *publisher) SendMessage(mesg *media.Message) {
 	}
 	pub.mu.RUnlock()
 
-	pub.mu.Lock()
-	for _, consumer := range removed {
-		pub.stopConsumer(consumer)
+	if len(removed) > 0 {
+		pub.mu.Lock()
+		for _, consumer := range removed {
+			pub.stopConsumer(consumer)
+		}
+		pub.mu.Unlock()
 	}
-	pub.mu.Unlock()
 }
 
 func (pub *publisher) SendMetaData(metaData *media.MetaData) error {
@@ -165,7 +182,7 @@ func (pub *publisher) SendMetaData(metaData *media.MetaData) error {
 		return fmt.Errorf("encode meta data: %w", err)
 	}
 
-	buf := media.NewSharedBuffer(pub.pool, data, len(data))
+	buf := media.NewSharedBuffer(pub.audioPool, data, len(data))
 	meta := pub.holdBuffer(buf, false)
 	pub.mu.Lock()
 	pub.meta = meta

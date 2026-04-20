@@ -108,6 +108,10 @@ func (c *wsConsumer) readMessages(ready chan struct{}) {
 			break
 		}
 	}
+
+	for mesg := range c.messages {
+		mesg.Data.Release()
+	}
 }
 
 func (c *wsConsumer) run(receiver media.Receiver, streamService service.Stream, req *http.Request, userID uint64) {

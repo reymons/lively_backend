@@ -11,7 +11,9 @@ type Publisher interface {
 
 	RemoveConsumer(consumer Consumer)
 
-	AcquireBuffer() *SharedBuffer
+	AcquireVideoBuffer() *SharedBuffer
+
+	AcquireAudioBuffer() *SharedBuffer
 
 	SendMessage(mesg *Message)
 
